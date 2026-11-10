@@ -51,5 +51,5 @@ export async function commitUndo(plan: UndoPlan): Promise<void> {
 }
 
 export async function saveSetting(id: string, value: string): Promise<void> {
-  await db.settings.put({ id, value, updated_at: nowIso() })
+  await applyChanges({ settings: [{ id, value, updated_at: nowIso() }] })
 }

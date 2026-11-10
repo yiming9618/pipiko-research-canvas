@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Home } from './views/home/Home'
+import { Library } from './views/library/Library'
 import { Settings } from './views/settings/Settings'
 
 function currentRoute(): string {
@@ -19,5 +20,7 @@ export default function App() {
   }, [])
 
   if (route === '/settings') return <Settings />
+  if (route === '/library') return <Library />
+  if (route.startsWith('/paper/')) return <Library paperId={decodeURIComponent(route.slice(7))} />
   return <Home />
 }

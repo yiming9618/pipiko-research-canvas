@@ -60,6 +60,32 @@ export const IconUndo = () => (
   </Icon>
 )
 
+export const IconChevron = () => (
+  <Icon>
+    <path d="M6 9l6 6 6-6" />
+  </Icon>
+)
+
+export const IconClose = () => (
+  <Icon>
+    <path d="M6 6l12 12M18 6L6 18" />
+  </Icon>
+)
+
+export const IconPlus = () => (
+  <Icon>
+    <path d="M12 5v14M5 12h14" />
+  </Icon>
+)
+
+export const IconImage = () => (
+  <Icon>
+    <rect x="4" y="5" width="16" height="14" rx="2.5" />
+    <circle cx="9" cy="10" r="1.5" />
+    <path d="M5 17l4.500-4 3.500 3 2.500-2 3.500 3" />
+  </Icon>
+)
+
 export const IconDownload = () => (
   <Icon>
     <path d="M12 4v11M7 11l5 5 5-5M5 20h14" />

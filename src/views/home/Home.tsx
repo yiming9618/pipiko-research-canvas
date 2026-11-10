@@ -2,7 +2,8 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useRef, useState } from 'react'
 import { saveSetting } from '../../store/actions'
 import { db } from '../../store/db'
-import { IconArrowDown, IconSettings } from '../../ui/icons'
+import { IconArrowDown } from '../../ui/icons'
+import { TopNav } from '../../ui/TopNav'
 import { PastePanel } from './PastePanel'
 
 const QUESTION_KEY = 'current_question'
@@ -44,11 +45,7 @@ export function Home() {
     <div className="home" ref={rootRef}>
       <div className="glow" aria-hidden="true" />
 
-      <div className="home-top">
-        <a className="icon-btn" href="#/settings" aria-label="设置">
-          <IconSettings />
-        </a>
-      </div>
+      <TopNav current="home" />
 
       <main>
         <section className="hero">

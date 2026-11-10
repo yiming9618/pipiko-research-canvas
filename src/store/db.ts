@@ -18,7 +18,17 @@ export const TABLE_NAMES: TableName[] = [
   'assets',
 ]
 
-type Db = Dexie & { [K in TableName]: EntityTable<Tables[K], 'id'> }
+/** Local-only: which entries changed on this device and still need to be sent when sync is connected. */
+export interface DirtyRow {
+  key: string
+  table: TableName
+  id: string
+  updated_at: string
+}
+
+type Db = Dexie & { [K in TableName]: EntityTable<Tables[K], 'id'> } & {
+  dirty: EntityTable<DirtyRow, 'key'>
+}
 
 export const db = new Dexie('research-notebook') as Db
 
@@ -38,6 +48,8 @@ db.version(1).stores({
   assets: 'id, updated_at',
 })
 
+db.version(2).stores({ dirty: 'key' })
+
 db.on('populate', (tx) => {
   tx.table('types').bulkAdd(builtinTypes())
 })
@@ -46,9 +58,13 @@ db.on('populate', (tx) => {
 export async function applyChanges(changes: Changes): Promise<void> {
   const names = (Object.keys(changes) as TableName[]).filter((n) => (changes[n]?.length ?? 0) > 0)
   if (names.length === 0) return
-  await db.transaction('rw', names.map((n) => db[n]), async () => {
+  await db.transaction('rw', [...names.map((n) => db[n]), db.dirty], async () => {
     for (const name of names) {
-      await db.table(name).bulkPut(changes[name] as object[])
+      const rows = changes[name] as { id: string; updated_at: string }[]
+      await db.table(name).bulkPut(rows)
+      await db.dirty.bulkPut(
+        rows.map((r) => ({ key: `${name}:${r.id}`, table: name, id: r.id, updated_at: r.updated_at })),
+      )
     }
   })
 }

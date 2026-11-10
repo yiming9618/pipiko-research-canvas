@@ -1,11 +1,74 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useRef, useState } from 'react'
 import { shortDate } from '../../domain/importer'
-import type { ImportEntry } from '../../domain/types'
+import type { HighlightType, ImportEntry } from '../../domain/types'
 import { downloadJson, exportAll, importBackup, parseBackup } from '../../store/backup'
 import { db, todayLocal } from '../../store/db'
+import { saveType } from '../../store/paperActions'
 import { IconBack, IconDownload, IconUndo, IconUpload } from '../../ui/icons'
 import { useUndo } from '../../ui/useUndo'
+
+const COLORS: [string, string][] = [
+  ['default', '米色'],
+  ['red', '红'],
+  ['pink', '粉'],
+  ['orange', '橙'],
+  ['yellow', '黄'],
+  ['green', '绿'],
+  ['teal', '青'],
+  ['blue', '蓝'],
+  ['purple', '紫'],
+  ['gray', '灰'],
+]
+
+/** The preset types are fixed; types that came in from Markdown can be renamed and recoloured. */
+function TypeEditor() {
+  const types = useLiveQuery(() => db.types.filter((t) => !t.deleted).sortBy('order'))
+  return (
+    <section className="section" aria-labelledby="s-types">
+      <h2 id="s-types">重点类型</h2>
+      <p className="section-note">预设的 8 种是固定的。导入时新出现的类型可以在这里改名、改颜色，已有的区块会一起更新。</p>
+      <ul className="type-list">
+        {types?.map((t: HighlightType) => (
+          <li key={t.id} className="type-row" data-color={t.color}>
+            <span className="dot" aria-hidden="true" />
+            {t.builtin ? (
+              <span className="type-name">{t.name}</span>
+            ) : (
+              <>
+                <label className="type-name">
+                  <span className="sr-only">类型名称</span>
+                  <input
+                    key={t.name}
+                    defaultValue={t.name}
+                    onBlur={(e) => {
+                      const name = e.target.value.trim()
+                      if (name && name !== t.name) void saveType(t, { name })
+                      else e.target.value = t.name
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur()
+                    }}
+                  />
+                </label>
+                <label>
+                  <span className="sr-only">颜色</span>
+                  <select value={t.color} onChange={(e) => void saveType(t, { color: e.target.value })}>
+                    {COLORS.map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
 
 function clock(iso: string): string {
   const d = new Date(iso)
@@ -88,6 +151,8 @@ export function Settings() {
           ))}
         </ul>
       </section>
+
+      <TypeEditor />
 
       <section className="section" aria-labelledby="s-backup">
         <h2 id="s-backup">备份</h2>
