@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "dexie": "^4.4.7",
+    "dexie-react-hooks": "^4.4.0",
     "markdown-it": "^15.0.3",
     "perfect-freehand": "^1.2.3",
     "react": "^19.3.1",
@@ -25,6 +26,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "fake-indexeddb": "^6.2.8",
     "oxlint": "^1.90.0",
+    "playwright": "^1.65.0",
     "typescript": "~7.0.2",
     "vite": "^8.3.6",
     "vite-plugin-pwa": "^2.0.0",

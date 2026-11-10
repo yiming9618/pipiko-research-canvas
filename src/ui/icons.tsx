@@ -1,0 +1,73 @@
+// One small line-icon set: 24px grid, 1.5 stroke, round caps.
+// Icons are decorative next to text; icon-only buttons carry their own aria-label.
+
+import type { ReactNode } from 'react'
+
+function Icon({ children }: { children: ReactNode }) {
+  return (
+    <svg
+      className="icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  )
+}
+
+export const IconSettings = () => (
+  <Icon>
+    <path d="M4 7h9M17 7h3M4 17h3M11 17h9" />
+    <circle cx="15" cy="7" r="2" />
+    <circle cx="9" cy="17" r="2" />
+  </Icon>
+)
+
+export const IconArrowDown = () => (
+  <Icon>
+    <path d="M12 5v14M6 13l6 6 6-6" />
+  </Icon>
+)
+
+export const IconBack = () => (
+  <Icon>
+    <path d="M15 5l-7 7 7 7" />
+  </Icon>
+)
+
+export const IconCopy = () => (
+  <Icon>
+    <rect x="9" y="9" width="11" height="11" rx="2.5" />
+    <path d="M15 9V6.5A2.5 2.5 0 0 0 12.500 4h-6A2.500 2.500 0 0 0 4 6.500v6A2.500 2.500 0 0 0 6.500 15H9" />
+  </Icon>
+)
+
+export const IconCheck = () => (
+  <Icon>
+    <path d="M5 12.500l4.500 4.500L19 7.500" />
+  </Icon>
+)
+
+export const IconUndo = () => (
+  <Icon>
+    <path d="M8 5L4 9l4 4" />
+    <path d="M4 9h10a5 5 0 0 1 0 10h-3" />
+  </Icon>
+)
+
+export const IconDownload = () => (
+  <Icon>
+    <path d="M12 4v11M7 11l5 5 5-5M5 20h14" />
+  </Icon>
+)
+
+export const IconUpload = () => (
+  <Icon>
+    <path d="M12 16V5M7 9l5-5 5 5M5 20h14" />
+  </Icon>
+)

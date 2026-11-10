@@ -1,0 +1,131 @@
+import { useLiveQuery } from 'dexie-react-hooks'
+import { useRef, useState } from 'react'
+import { shortDate } from '../../domain/importer'
+import type { ImportEntry } from '../../domain/types'
+import { downloadJson, exportAll, importBackup, parseBackup } from '../../store/backup'
+import { db, todayLocal } from '../../store/db'
+import { IconBack, IconDownload, IconUndo, IconUpload } from '../../ui/icons'
+import { useUndo } from '../../ui/useUndo'
+
+function clock(iso: string): string {
+  const d = new Date(iso)
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+export function Settings() {
+  const imports = useLiveQuery(() => db.imports.orderBy('imported_at').reverse().limit(30).toArray())
+  const { requestUndo, dialog } = useUndo()
+  const [openRaw, setOpenRaw] = useState<string | null>(null)
+  const [backup, setBackup] = useState<{ text: string; error?: boolean } | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const doExport = async () => {
+    try {
+      downloadJson(await exportAll(), todayLocal())
+      setBackup({ text: '已导出。请把这个文件存到"文件"或 iCloud 云盘里。' })
+    } catch (err) {
+      setBackup({ text: `导出失败：${err instanceof Error ? err.message : String(err)}`, error: true })
+    }
+  }
+
+  const doImport = async (file: File | undefined) => {
+    if (!file) return
+    try {
+      const { added, total } = await importBackup(parseBackup(await file.text()))
+      setBackup({
+        text:
+          added === 0
+            ? `备份里的 ${total} 条内容这台设备上都已经有了，没有变化。`
+            : `已导入：补上或更新了 ${added} 条内容（备份共 ${total} 条）。`,
+      })
+    } catch (err) {
+      setBackup({ text: err instanceof Error ? err.message : String(err), error: true })
+    } finally {
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
+  return (
+    <main className="page">
+      <header className="page-head">
+        <a className="icon-btn" href="#/" aria-label="回到主页">
+          <IconBack />
+        </a>
+        <h1>设置</h1>
+      </header>
+
+      <section className="section" aria-labelledby="s-imports">
+        <h2 id="s-imports">最近导入</h2>
+        {imports && imports.length === 0 && <p className="empty">还没有导入过内容。</p>}
+        <ul className="import-list">
+          {imports?.map((e: ImportEntry) => (
+            <li key={e.id} className={`import-item${e.undone ? ' is-undone' : ''}`}>
+              <div className="import-meta">
+                <span className="tag">{e.kind === 'paper' ? '论文' : '研究记录'}</span>
+                <span>内容日期 {shortDate(e.date)}</span>
+                <span>导入于 {clock(e.imported_at)}</span>
+                {e.undone && <span>已撤销</span>}
+              </div>
+              <p className="import-msg">{e.message}</p>
+              <div className="import-actions">
+                <button
+                  type="button"
+                  className="btn btn-quiet"
+                  aria-expanded={openRaw === e.id}
+                  onClick={() => setOpenRaw(openRaw === e.id ? null : e.id)}
+                >
+                  {openRaw === e.id ? '收起原文' : '查看原始 Markdown'}
+                </button>
+                {!e.undone && (
+                  <button type="button" className="btn btn-quiet" onClick={() => void requestUndo(e)}>
+                    <IconUndo />
+                    撤销
+                  </button>
+                )}
+              </div>
+              {openRaw === e.id && <pre className="raw">{e.raw_md}</pre>}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="section" aria-labelledby="s-backup">
+        <h2 id="s-backup">备份</h2>
+        <p className="section-note">
+          导出会把这台设备上的全部内容存成一个 JSON 文件。导入只会补上缺少的、更新较旧的，不会删掉这台设备上已有的内容。
+        </p>
+        <div className="row-actions">
+          <button type="button" className="btn" onClick={() => void doExport()}>
+            <IconDownload />
+            导出全部
+          </button>
+          <button type="button" className="btn" onClick={() => fileRef.current?.click()}>
+            <IconUpload />
+            从备份导入
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json,.json"
+            className="sr-only"
+            tabIndex={-1}
+            aria-hidden="true"
+            onChange={(ev) => void doImport(ev.target.files?.[0])}
+          />
+        </div>
+        <p className={`status-line${backup?.error ? ' is-error' : ''}`} role="status" aria-live="polite">
+          {backup?.text}
+        </p>
+      </section>
+
+      <section className="section" aria-labelledby="s-sync">
+        <h2 id="s-sync">同步</h2>
+        <p className="section-note">
+          还没有连接。现在每台设备的内容各存各的，手机上导入的不会出现在 iPad 上。要搬到另一台设备，先用上面的备份。
+        </p>
+      </section>
+
+      {dialog}
+    </main>
+  )
+}
