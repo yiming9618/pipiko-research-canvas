@@ -182,7 +182,9 @@ a {
   content: '';
   position: absolute;
   border-radius: 50%;
-  filter: blur(20px);
+  filter: blur(28px);
+  /* the light drifts up a little as the paste panel comes in */
+  transform: translateY(calc(var(--p) * -48px));
 }
 
 .glow::before {
@@ -279,6 +281,48 @@ a {
   background: rgba(255, 255, 255, 0.7);
 }
 
+.hero > * {
+  animation: rise 520ms var(--ease-out) both;
+}
+
+.hero > :nth-child(2) {
+  animation-delay: 60ms;
+}
+
+.hero > :nth-child(3) {
+  animation-delay: 120ms;
+}
+
+.hero > :nth-child(4) {
+  animation-delay: 200ms;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.hero-hint .icon {
+  animation: nudge 2.6s ease-in-out 1.2s infinite;
+}
+
+@keyframes nudge {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(5px);
+  }
+}
+
+.hero-hint:hover {
+  color: var(--text);
+}
+
 .hero-hint {
   margin-top: clamp(24px, 10vh, 120px);
   border: none;
@@ -325,7 +369,12 @@ a {
     opacity: 1;
     transform: none;
   }
+  .glow::before,
+  .glow::after {
+    transform: none;
+  }
   * {
+    animation: none !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
@@ -375,7 +424,7 @@ a {
 }
 
 .md-input::placeholder {
-  color: #8a7b7e;
+  color: #766769;
 }
 
 .panel-row {
@@ -603,15 +652,15 @@ a {
 
 [data-color='red'] { --c-bg: #fbe3e1; --c-dot: #d2504a; --c-ink: #8c2b26; }
 [data-color='pink'] { --c-bg: #fbe4ee; --c-dot: #d9689a; --c-ink: #8e2f5b; }
-[data-color='orange'] { --c-bg: #fbe7d3; --c-dot: #db8a3c; --c-ink: #8a4a12; }
-[data-color='yellow'] { --c-bg: #fff6c7; --c-dot: #d9b620; --c-ink: #6b5800; }
-[data-color='green'] { --c-bg: #e1f2e4; --c-dot: #4fa866; --c-ink: #2a6a3c; }
-[data-color='teal'] { --c-bg: #ddf1f0; --c-dot: #3ba5a0; --c-ink: #1f6562; }
+[data-color='orange'] { --c-bg: #fbe7d3; --c-dot: #c97a2b; --c-ink: #8a4a12; }
+[data-color='yellow'] { --c-bg: #fff6c7; --c-dot: #a58a00; --c-ink: #6b5800; }
+[data-color='green'] { --c-bg: #e1f2e4; --c-dot: #3f9657; --c-ink: #2a6a3c; }
+[data-color='teal'] { --c-bg: #ddf1f0; --c-dot: #2f918c; --c-ink: #1f6562; }
 [data-color='blue'] { --c-bg: #e3f1fb; --c-dot: #4c95cf; --c-ink: #2f5f80; }
 [data-color='gray'] { --c-bg: #eceaea; --c-dot: #8b8587; --c-ink: #4f4a4b; }
 [data-color='purple'] { --c-bg: #ece6f7; --c-dot: #8a6bc4; --c-ink: #54398f; }
-[data-color='default'] { --c-bg: #f3eee6; --c-dot: #b5a58c; --c-ink: #6b5a3e; }
-[data-color='plain'] { --c-bg: var(--surface); --c-dot: #b5a58c; --c-ink: var(--text-soft); }
+[data-color='default'] { --c-bg: #f3eee6; --c-dot: #96866a; --c-ink: #6b5a3e; }
+[data-color='plain'] { --c-bg: var(--surface); --c-dot: #96866a; --c-ink: var(--text-soft); }
 
 .dot {
   width: 12px;
@@ -1954,7 +2003,7 @@ select,
   background: transparent;
   border-style: dashed;
   border-color: #e3c9ce;
-  color: #8a7b7e;
+  color: #766769;
 }
 
 .tile-count {
@@ -2465,4 +2514,91 @@ select,
   color: var(--accent-deep);
   border-radius: 4px;
   padding: 0 2px;
+}
+
+/* ── finishing touches ───────────────────────────────── */
+
+/* A little of the hand-made: things pinned to a board never sit perfectly square. */
+.node.photo img {
+  transform: rotate(-0.6deg);
+}
+
+.node.photo {
+  transform-origin: center;
+}
+
+.pile-back {
+  transform: rotate(2.5deg);
+  transform-origin: left bottom;
+  transition: transform var(--slow) var(--ease-out);
+}
+
+.pile-tile:hover .pile-back,
+.pile-tile.is-over .pile-back {
+  transform: rotate(5deg);
+}
+
+/* The result of an import arrives with a small settle, so it is noticed without a pop-up. */
+.result {
+  animation: settle 360ms var(--ease-out) both;
+}
+
+@keyframes settle {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+
+.search-panel,
+.cite-pop,
+.sel-bar,
+.dock {
+  animation: appear 180ms var(--ease-out) both;
+}
+
+.sel-bar {
+  animation-name: appear-centered;
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes appear-centered {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 4px);
+  }
+}
+
+/* Pressed states everywhere a tap lands. */
+.paper-row:active,
+.chip:active,
+.tool:active,
+.search-item a:active,
+.topnav-links a:active,
+.icon-btn:active {
+  background: rgba(43, 34, 36, 0.08);
+}
+
+.btn:focus-visible,
+.chip:focus-visible,
+.tool:focus-visible {
+  outline-offset: 3px;
+}
+
+.dialog[open] {
+  animation: settle 220ms var(--ease-out) both;
+}
+
+.topnav-links a[aria-current='page'] {
+  background: transparent;
+}
+
+::selection {
+  background: var(--accent-wash);
 }
