@@ -31,7 +31,7 @@ export async function runImport(raw: string, kindHint: ImportKind): Promise<Impo
 
 /** Step one of undo: what would be lost. Nothing is changed yet. */
 export async function prepareUndo(entry: ImportEntry): Promise<UndoPlan> {
-  const [imports, papers, blocks, comments, types, records, cards, boardItems, connectors, piles] =
+  const [imports, papers, blocks, comments, types, records, cards, boardItems, connectors, piles, discussionItems] =
     await Promise.all([
       db.imports.toArray(),
       db.papers.toArray(),
@@ -43,10 +43,12 @@ export async function prepareUndo(entry: ImportEntry): Promise<UndoPlan> {
       db.boardItems.toArray(),
       db.connectors.toArray(),
       db.piles.toArray(),
+      db.discussionItems.toArray(),
     ])
+  const keptPaperIds = new Set(discussionItems.filter((i) => !i.deleted && i.ref_type === 'paper').map((i) => i.ref_id))
   return planUndo(
     entry,
-    { imports, papers, blocks, comments, types, records, cards, boardItems, connectors, piles },
+    { imports, papers, blocks, comments, types, records, cards, boardItems, connectors, piles, keptPaperIds },
     nowIso(),
   )
 }
@@ -63,6 +65,16 @@ export async function saveSetting(id: string, value: string): Promise<void> {
 export async function confirmSameAsWant(entryId: string, paperId: string, wantId: string): Promise<boolean> {
   const [entry, paper, want] = await Promise.all([db.imports.get(entryId), db.papers.get(paperId), db.papers.get(wantId)])
   if (!entry || !paper || !want || paper.deleted || want.deleted || want.status !== 'want') return false
-  await applyChanges(mergeWant(entry, paper, want, nowIso()))
+  const now = nowIso()
+  const changes = mergeWant(entry, paper, want, now)
+  // discussion boxes that held the "想看" entry now hold the paper
+  const held = (await db.discussionItems.toArray()).filter((i) => !i.deleted && i.ref_type === 'paper' && i.ref_id === want.id)
+  const paperIn = new Set(
+    (await db.discussionItems.toArray()).filter((i) => !i.deleted && i.ref_type === 'paper' && i.ref_id === paper.id).map((i) => i.discussion_id),
+  )
+  changes.discussionItems = held.map((i) =>
+    paperIn.has(i.discussion_id) ? { ...i, deleted: true, updated_at: now } : { ...i, ref_id: paper.id, updated_at: now },
+  )
+  await applyChanges(changes)
   return true
 }

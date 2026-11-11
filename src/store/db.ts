@@ -16,6 +16,8 @@ export const TABLE_NAMES: TableName[] = [
   'piles',
   'settings',
   'assets',
+  'discussions',
+  'discussionItems',
 ]
 
 /** Local-only: which entries changed on this device and still need to be sent when sync is connected. */
@@ -57,6 +59,7 @@ db.version(1).stores({
 
 db.version(2).stores({ dirty: 'key' })
 db.version(3).stores({ device: 'key' })
+db.version(4).stores({ discussions: 'id, updated_at', discussionItems: 'id, updated_at, discussion_id' })
 
 /** Called after every change made on this device (not for changes that arrive through sync). */
 export const localChangeListeners = new Set<() => void>()

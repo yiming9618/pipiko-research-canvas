@@ -5,6 +5,7 @@ import { db } from '../../store/db'
 import { markRead, retryLookup } from '../../store/paperActions'
 import { shortDate } from '../../domain/importer'
 import { AddPaperForm, EditPaperForm } from './PaperForm'
+import { AddToDiscussion } from '../discussions/AddToDiscussion'
 import { DRAG_TYPE } from '../../store/pileActions'
 import { IconChevron, IconEdit, IconPlus } from '../../ui/icons'
 
@@ -281,6 +282,7 @@ function WantItem({ paper }: { paper: Paper }) {
         <button type="button" className="btn btn-quiet" aria-label={`标为已读：${name}`} onClick={() => void markRead(paper)}>
           标为已读
         </button>
+        <AddToDiscussion refs={[{ type: 'paper', id: paper.id }]} iconOnly label={`放进讨论框：${name}`} />
         <button type="button" className="icon-btn" aria-label={`编辑：${name}`} onClick={() => setEditing(true)}>
           <IconEdit />
         </button>

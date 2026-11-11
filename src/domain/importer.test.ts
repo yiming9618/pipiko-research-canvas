@@ -19,6 +19,8 @@ function makeStore() {
     piles: [],
     settings: [],
     assets: [],
+    discussions: [],
+    discussionItems: [],
   }
   const ctx = (kindHint: 'paper' | 'research'): ImportContext => ({
     papers: tables.papers,

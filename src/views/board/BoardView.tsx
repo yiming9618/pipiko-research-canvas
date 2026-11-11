@@ -3,7 +3,7 @@
 //  - a pile: references to cards, papers and other piles, freely arranged
 
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { candidatesFor, linkCitations } from '../../domain/citations'
 import { shortDate } from '../../domain/importer'
 import { cardKey, coverKey, defaultLayout } from '../../domain/layout'
@@ -25,6 +25,7 @@ import { IconBack, IconCheck, IconHand, IconImage, IconLink, IconPen, IconPlus, 
 import { fileToImage } from '../../ui/image'
 import { Markdown } from '../../ui/Markdown'
 import { AddToPile } from '../piles/AddToPile'
+import { AddToDiscussion } from '../discussions/AddToDiscussion'
 import { countLabel } from '../piles/PileShelf'
 import { Crumb } from '../time/Crumb'
 import { KIND_COLOR } from '../time/MonthView'
@@ -105,6 +106,10 @@ export function BoardView(props: Props) {
   const [rawOf, setRawOf] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null)
   const [dropping, setDropping] = useState(false)
+  /** Cards being chosen for a discussion box (days only). null = not choosing. */
+  const [picked, setPicked] = useState<string[] | null>(null)
+  const press = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null)
+  const swallowClick = useRef(false)
   const api = useRef<CanvasApi>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const stage = useRef<HTMLDivElement>(null)
@@ -117,7 +122,8 @@ export function BoardView(props: Props) {
   }, [])
 
   const canEdit = !narrow
-  const isEditing = editing && canEdit
+  const isEditing = editing && canEdit && picked === null
+  const canPick = isDay && canEdit
 
   const onMeasure = useCallback((key: string, h: number) => {
     setHeights((prev) => (prev[key] === h ? prev : { ...prev, [key]: h }))
@@ -475,6 +481,66 @@ export function BoardView(props: Props) {
     return out
   }, [isDay, paperImports, papers, date])
 
+  // ── choosing cards for a discussion box: long press (touch), right click (mouse), or the "选卡片" button
+  const cardKeyAt = (target: EventTarget | null) => {
+    const key = (target as HTMLElement | null)?.closest<HTMLElement>('[data-node]')?.dataset.node ?? ''
+    return key.startsWith('card:') ? key : ''
+  }
+  const togglePick = (key: string) =>
+    setPicked((prev) => (prev === null ? [key] : prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]))
+  const cancelPress = () => {
+    if (press.current) clearTimeout(press.current.timer)
+    press.current = null
+  }
+  const pickHandlers = canPick
+    ? {
+        onContextMenu: (e: MouseEvent) => {
+          const key = cardKeyAt(e.target)
+          if (!key || isEditing) return
+          e.preventDefault()
+          setPicked((prev) => (prev === null ? [key] : prev.includes(key) ? prev : [...prev, key]))
+        },
+        onPointerDownCapture: (e: ReactPointerEvent) => {
+          cancelPress()
+          const key = cardKeyAt(e.target)
+          if (!key || e.pointerType === 'mouse' || isEditing || picked !== null) return
+          press.current = {
+            x: e.clientX,
+            y: e.clientY,
+            timer: setTimeout(() => {
+              press.current = null
+              swallowClick.current = true
+              setPicked([key])
+            }, 550),
+          }
+        },
+        onPointerMoveCapture: (e: ReactPointerEvent) => {
+          const p = press.current
+          if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8) cancelPress()
+        },
+        onPointerUpCapture: cancelPress,
+        onPointerCancelCapture: cancelPress,
+        onClickCapture: (e: MouseEvent) => {
+          if (swallowClick.current) {
+            // the tap that ends a long press must not immediately un-choose the card
+            swallowClick.current = false
+            e.preventDefault()
+            e.stopPropagation()
+            return
+          }
+          if (picked === null) return
+          // The board captures the pointer for panning, so the click's own target is the board:
+          // look at what is under the finger instead.
+          if ((e.target as HTMLElement).closest('.pick-bar, .board-head, dialog')) return
+          const key = cardKeyAt(document.elementFromPoint(e.clientX, e.clientY))
+          if (!key) return
+          e.preventDefault()
+          e.stopPropagation()
+          togglePick(key)
+        },
+      }
+    : {}
+
   const onClick = (e: MouseEvent) => {
     const cite = (e.target as HTMLElement).closest<HTMLAnchorElement>('a.cite')
     if (!cite) return
@@ -519,6 +585,11 @@ export function BoardView(props: Props) {
     say(ADD_MESSAGE[await addToPile(pile.id, ref)](pile.name))
   }
 
+  const shownNodes = useMemo(
+    () => (picked && picked.length > 0 ? nodes.map((n) => (picked.includes(n.key) ? { ...n, className: `${n.className ?? ''} is-picked` } : n)) : nodes),
+    [nodes, picked],
+  )
+
   const popPaper = popover ? papers?.find((p) => p.id === popover.paperId) : undefined
   const loaded = source !== undefined && items !== undefined && (isDay || pile !== undefined)
   useStageAnimation(stage, 2, isDay ? date : `pile:${pileId}`, loaded)
@@ -562,6 +633,9 @@ export function BoardView(props: Props) {
             </span>
           ))}
         </div>
+        {loaded && sortedRecords.length > 0 && (
+          <AddToDiscussion refs={[{ type: 'day', id: date }]} iconOnly label="把这一天的画板放进讨论框" />
+        )}
       </>
     )
   } else {
@@ -573,8 +647,9 @@ export function BoardView(props: Props) {
 
   return (
     <div
-      className={`dayboard${dropping ? ' is-dropping' : ''}`}
+      className={`dayboard${dropping ? ' is-dropping' : ''}${picked !== null ? ' is-picking' : ''}`}
       onClick={onClick}
+      {...pickHandlers}
       ref={stage}
       onDragOver={onDragOver}
       onDragLeave={() => setDropping(false)}
@@ -590,7 +665,7 @@ export function BoardView(props: Props) {
 
       <Canvas
         // Wait until everything has loaded: the view is fitted once, to the first content it sees.
-        nodes={loaded ? nodes : []}
+        nodes={loaded ? shownNodes : []}
         links={connectors ?? []}
         strokes={strokes ?? []}
         editing={isEditing}
@@ -697,13 +772,37 @@ export function BoardView(props: Props) {
             />
           </div>
         ) : (
-          loaded && (
-            <button type="button" className="btn edit-toggle" onClick={() => setEditing(true)}>
-              <IconPen />
-              编排
-            </button>
+          loaded &&
+          picked === null && (
+            <div className="edit-toggle view-tools">
+              {canPick && (cards?.length ?? 0) > 0 && (
+                <button type="button" className="btn" onClick={() => setPicked([])}>
+                  选卡片
+                </button>
+              )}
+              <button type="button" className="btn" onClick={() => setEditing(true)}>
+                <IconPen />
+                编排
+              </button>
+            </div>
           )
         ))}
+
+      {picked !== null && (
+        <div className="pick-bar" role="group" aria-label="选卡片放进讨论框">
+          <span role="status">{picked.length === 0 ? '点卡片来选' : `已选 ${picked.length} 张`}</span>
+          {picked.length > 0 && (
+            <AddToDiscussion
+              className="btn btn-primary btn-small"
+              refs={() => picked.map((k) => ({ type: 'card' as const, id: k.slice(5) }))}
+              onDone={() => setPicked(null)}
+            />
+          )}
+          <button type="button" className="btn btn-quiet btn-small" onClick={() => setPicked(null)}>
+            取消
+          </button>
+        </div>
+      )}
 
       {notice ? (
         <p className={`tool-hint${notice.error ? ' is-error' : ''}`} role={notice.error ? 'alert' : 'status'}>
@@ -761,6 +860,7 @@ function PileHead({ pile, count, editing }: { pile: Pile; count: string; editing
         </label>
       )}
       <span className="board-state">{count}</span>
+      <AddToDiscussion refs={[{ type: 'pile', id: pile.id }]} iconOnly label="把这个堆放进讨论框" />
       {editing && (
         <div className="pile-tools">
           <AddToPile target={{ type: 'pile', id: pile.id }} label="把这个堆放进…" />

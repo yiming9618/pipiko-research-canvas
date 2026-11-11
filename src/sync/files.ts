@@ -30,6 +30,9 @@ export function fileOf(table: TableName, e: Synced): string {
       return 'data/settings.json'
     case 'assets':
       return 'data/assets.json'
+    case 'discussions':
+    case 'discussionItems':
+      return 'data/discussions.json'
   }
 }
 
@@ -41,6 +44,7 @@ const TABLES_BY_PREFIX: [string, TableName[]][] = [
   ['data/piles.json', ['piles']],
   ['data/settings.json', ['types', 'settings']],
   ['data/assets.json', ['assets']],
+  ['data/discussions.json', ['discussions', 'discussionItems']],
 ]
 
 export function tablesIn(path: string): TableName[] {

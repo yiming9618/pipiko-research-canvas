@@ -105,4 +105,25 @@ describe('这台设备（IndexedDB）与数据仓库的同步', () => {
     await db.device.put({ key: 'sync-config', value: { owner: 'o', repo: 'r', token: 'SECRET-TOKEN' } })
     expect(JSON.stringify(await exportAll())).not.toContain('SECRET-TOKEN')
   })
+
+  it('讨论框：iPad 上放进去的，手机上能看到；两边各放各的都保留', async () => {
+    const remote = new MemoryRemote()
+    const phone = new MemoryLocal()
+    const box = { id: 'd1', name: '霉菌实验卡住了', created_at: now(), updated_at: now() }
+    const di = (id: string, ref: string) => ({ id, discussion_id: 'd1', ref_type: 'paper', ref_id: ref, added_at: now(), updated_at: now() })
+
+    await applyChanges({ discussions: [box], discussionItems: [di('i-ipad', 'p1')] } as never)
+    await syncOnce(new DexieLocal(), remote, now)
+    await syncOnce(phone, remote, now)
+    expect(phone.all('discussions').map((d) => d.id)).toEqual(['d1'])
+    expect(remote.files.has('data/discussions.json')).toBe(true)
+
+    phone.write('discussionItems', di('i-phone', 'p2') as never)
+    await applyChanges({ discussionItems: [di('i-ipad-2', 'p3')] } as never)
+    await syncOnce(phone, remote, now)
+    await syncOnce(new DexieLocal(), remote, now)
+    await syncOnce(phone, remote, now)
+    expect((await db.discussionItems.toArray()).map((i) => i.id).sort()).toEqual(['i-ipad', 'i-ipad-2', 'i-phone'])
+    expect(phone.all('discussionItems').map((i) => i.id).sort()).toEqual(['i-ipad', 'i-ipad-2', 'i-phone'])
+  })
 })

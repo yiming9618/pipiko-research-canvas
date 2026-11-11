@@ -182,6 +182,25 @@ export interface Pile extends Synced {
   created_at: ISODateTime
 }
 
+/** A named list of things to talk over with the AI. A list, not a board: no positions. */
+export interface Discussion extends Synced {
+  name: string
+  created_at: ISODateTime
+  /** Set when put away after exporting. Archived boxes are hidden from the list but can be brought back. */
+  archived_at?: ISODateTime
+}
+
+export type DiscussionRefType = 'paper' | 'card' | 'day' | 'pile'
+
+/** One thing in a discussion box. Always a reference; the original is never copied. */
+export interface DiscussionItem extends Synced {
+  discussion_id: string
+  ref_type: DiscussionRefType
+  /** Paper id, card id, a date (YYYY-MM-DD) for a whole day's board, or pile id. */
+  ref_id: string
+  added_at: ISODateTime
+}
+
 export interface Setting extends Synced {
   value: string
 }
@@ -208,6 +227,8 @@ export interface Tables {
   piles: Pile
   settings: Setting
   assets: Asset
+  discussions: Discussion
+  discussionItems: DiscussionItem
 }
 
 export type TableName = keyof Tables

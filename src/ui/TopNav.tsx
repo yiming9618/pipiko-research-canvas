@@ -1,8 +1,11 @@
-import { IconSettings } from './icons'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { activeBoxes } from '../domain/discussions'
+import { db } from '../store/db'
+import { IconChat, IconSettings } from './icons'
 import { SearchBox } from './SearchBox'
 import { useSync } from '../views/settings/SyncSection'
 
-type Place = 'home' | 'board' | 'library' | 'settings'
+type Place = 'home' | 'board' | 'library' | 'settings' | 'discussions'
 
 const LINKS: { place: Place; href: string; label: string }[] = [
   { place: 'home', href: '#/', label: '主页' },
@@ -12,6 +15,7 @@ const LINKS: { place: Place; href: string; label: string }[] = [
 
 export function TopNav({ current }: { current: Place }) {
   const stopped = useSync().phase === 'problem'
+  const boxes = useLiveQuery(async () => activeBoxes(await db.discussions.toArray()).length) ?? 0
   return (
     <nav className="topnav" aria-label="主导航">
       <div className="topnav-links">
@@ -22,6 +26,19 @@ export function TopNav({ current }: { current: Place }) {
         ))}
       </div>
       <div className="topnav-tools">
+        <a
+          className="icon-btn box-link"
+          href="#/discussions"
+          aria-label={boxes > 0 ? `讨论框，${boxes} 个` : '讨论框'}
+          aria-current={current === 'discussions' ? 'page' : undefined}
+        >
+          <IconChat />
+          {boxes > 0 && (
+            <span className="box-badge" aria-hidden="true">
+              {boxes}
+            </span>
+          )}
+        </a>
         <SearchBox />
         <a
           className="icon-btn"

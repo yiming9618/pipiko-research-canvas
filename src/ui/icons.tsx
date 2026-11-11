@@ -143,3 +143,9 @@ export const IconEdit = () => (
     <path d="M13.5 6.5l4 4" />
   </Icon>
 )
+
+export const IconChat = () => (
+  <Icon>
+    <path d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-7l-4 4v-4H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" />
+  </Icon>
+)

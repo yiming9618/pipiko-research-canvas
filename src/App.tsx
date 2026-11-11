@@ -4,6 +4,8 @@ import { Home } from './views/home/Home'
 import { Library } from './views/library/Library'
 import { Settings } from './views/settings/Settings'
 import { SyncBanner } from './ui/SyncBanner'
+import { Toaster } from './ui/toast'
+import { DiscussionPage, DiscussionsPage } from './views/discussions/DiscussionsPage'
 import { initSync } from './sync/controller'
 import { initLookups } from './store/lookup'
 
@@ -30,12 +32,15 @@ export default function App() {
   else if (route === '/board') page = <BoardPage />
   else if (route.startsWith('/board/')) page = <BoardPage param={route.slice(7)} />
   else if (route.startsWith('/pile/')) page = <BoardPage pileId={decodeURIComponent(route.slice(6))} />
+  else if (route === '/discussions') page = <DiscussionsPage />
+  else if (route.startsWith('/discussion/')) page = <DiscussionPage id={decodeURIComponent(route.slice(12))} />
   else if (route === '/library') page = <Library />
   else if (route.startsWith('/paper/')) page = <Library paperId={decodeURIComponent(route.slice(7))} />
   return (
     <>
       {page}
       <SyncBanner onSettings={route === '/settings'} />
+      <Toaster />
     </>
   )
 }

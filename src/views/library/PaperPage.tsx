@@ -7,6 +7,7 @@ import { addBlock, deleteBlock, saveBlockText, savePaperField } from '../../stor
 import { EditableText } from '../../ui/EditableText'
 import { IconBack, IconPlus } from '../../ui/icons'
 import { AddToPile } from '../piles/AddToPile'
+import { AddToDiscussion } from '../discussions/AddToDiscussion'
 import { CommentRail } from './CommentRail'
 import { EditPaperForm } from './PaperForm'
 
@@ -112,6 +113,7 @@ export function PaperPage({ id }: { id: string }) {
 
         <footer className="paper-foot">
           <AddToPile target={{ type: 'paper', id: paper.id }} />
+          <AddToDiscussion refs={[{ type: 'paper', id: paper.id }]} />
           {citedOn && citedOn.length > 0 && (
             <p className="cited">
               被引用于：

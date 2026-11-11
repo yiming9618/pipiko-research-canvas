@@ -20,6 +20,8 @@ function makeStore() {
     piles: [],
     settings: [],
     assets: [],
+    discussions: [],
+    discussionItems: [],
   }
   const apply = (changes: Changes) => {
     for (const key of Object.keys(changes) as TableName[]) {
