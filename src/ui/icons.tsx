@@ -97,3 +97,35 @@ export const IconUpload = () => (
     <path d="M12 16V5M7 9l5-5 5 5M5 20h14" />
   </Icon>
 )
+
+export const IconForward = () => (
+  <Icon>
+    <path d="M9 5l7 7-7 7" />
+  </Icon>
+)
+
+export const IconHand = () => (
+  <Icon>
+    <path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3" />
+  </Icon>
+)
+
+export const IconLink = () => (
+  <Icon>
+    <circle cx="5.500" cy="18.500" r="2.500" />
+    <path d="M7.500 16.500C11 13 13 11 18 6M13 6h5v5" />
+  </Icon>
+)
+
+export const IconPen = () => (
+  <Icon>
+    <path d="M4 20l1-4.500L16.500 4a2.120 2.120 0 0 1 3 3L8 18.500 4 20z" />
+    <path d="M14.500 6l3 3" />
+  </Icon>
+)
+
+export const IconText = () => (
+  <Icon>
+    <path d="M5 6V5h14v1M12 5v14M9 19h6" />
+  </Icon>
+)

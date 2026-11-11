@@ -1,9 +1,10 @@
 import { IconSettings } from './icons'
 
-type Place = 'home' | 'library' | 'settings'
+type Place = 'home' | 'board' | 'library' | 'settings'
 
 const LINKS: { place: Place; href: string; label: string }[] = [
   { place: 'home', href: '#/', label: '主页' },
+  { place: 'board', href: '#/board', label: '画板' },
   { place: 'library', href: '#/library', label: '论文库' },
 ]
 

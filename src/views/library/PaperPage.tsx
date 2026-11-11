@@ -94,7 +94,17 @@ export function PaperPage({ id }: { id: string }) {
         )}
 
         <footer className="paper-foot">
-          {citedOn && citedOn.length > 0 && <p>被引用于：{citedOn.map(shortDate).join('、')} 的画板</p>}
+          {citedOn && citedOn.length > 0 && (
+            <p className="cited">
+              被引用于：
+              {citedOn.map((d) => (
+                <a key={d} href={`#/board/${d}`}>
+                  {shortDate(d)}
+                </a>
+              ))}
+              的画板
+            </p>
+          )}
           {readDates.length > 0 && (
             <p>
               {readDates.length > 1 ? `读过 ${readDates.length} 次：` : '读于 '}
