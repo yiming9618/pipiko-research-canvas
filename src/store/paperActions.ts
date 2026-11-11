@@ -145,7 +145,7 @@ export interface PaperInfoPatch {
 
 /** Edits the details of a paper. A new DOI is looked up again when details are still missing. */
 export async function savePaperInfo(paper: Paper, patch: PaperInfoPatch): Promise<void> {
-  const next: Paper = { ...paper, updated_at: nowIso() }
+  const next: Paper = { ...paper, touched: true, updated_at: nowIso() }
   if (patch.title !== undefined) next.title = patch.title.trim()
   if (patch.url !== undefined) next.url = patch.url.trim()
   if (patch.why !== undefined) next.why = patch.why.trim()

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { builtinTypes, planImport } from './importer'
 import { planUndo, type UndoSnapshot } from './undo'
+import { mergeWant } from './mergeWant'
 import type { BoardItem, Changes, Comment, Connector, Paper, TableName } from './types'
 
 function makeStore() {
@@ -212,5 +213,75 @@ describe('撤销论文的导入', () => {
       one_liner: '',
     })
     expect(t.papers[0].deleted).toBeUndefined()
+  })
+})
+
+describe('撤销：AI 提到的想看、确认合并的想看', () => {
+  const R = (date: string) => `---\ntype: research\ndate: ${date}\ntitle: 记录\npapers: 10.1/new\n---\n## 发现\na\n`
+
+  it('没动过的 AI 想看条目随记录一起移除，不需要确认', () => {
+    const s = makeStore()
+    const e = s.run(R('2026-11-10'), 'research')
+    expect(s.live(s.t.papers)).toHaveLength(1)
+    const u = s.undo(e.id)
+    expect(u.plan.impacts).toEqual([])
+    u.commit()
+    expect(s.live(s.t.papers)).toHaveLength(0)
+  })
+
+  it('编辑过的保留，并列在影响清单里', () => {
+    const s = makeStore()
+    const e = s.run(R('2026-11-10'), 'research')
+    s.t.papers[0] = { ...s.t.papers[0], why: '想了解方法', touched: true }
+    const u = s.undo(e.id)
+    expect(u.plan.impacts.join()).toContain('会保留在想看里')
+    u.commit()
+    expect(s.live(s.t.papers)).toHaveLength(1)
+    expect(s.t.papers[0].mentioned_in).toEqual([])
+  })
+
+  it('另一份记录也提到它：撤销其中一份只去掉那个来源', () => {
+    const s = makeStore()
+    const first = s.run(R('2026-11-08'), 'research')
+    s.run(R('2026-11-10'), 'research')
+    s.undo(first.id).commit()
+    const left = s.live(s.t.papers)
+    expect(left).toHaveLength(1)
+    expect(left[0].mentioned_in?.map((m) => m.date)).toEqual(['2026-11-10'])
+  })
+
+  it('已经放进讨论框的不会被悄悄移除', () => {
+    const s = makeStore()
+    const e = s.run(R('2026-11-10'), 'research')
+    const entry = s.t.imports.find((x) => x.id === e.id)!
+    const plan = planUndo(entry, { ...(s.t as UndoSnapshot), keptPaperIds: new Set([s.t.papers[0].id]) }, '2026-11-12T00:00:00.000Z')
+    expect(plan.impacts.join()).toContain('会保留在想看里')
+    expect(plan.changes.papers?.[0].deleted).toBeUndefined()
+  })
+
+  it('确认合并后撤销导入：想看条目原样回来', () => {
+    const s = makeStore()
+    const want: Paper = {
+      id: 'w1', title: 'living media draft', authors: [], year: null, venue: '', doi: '', category: '', keywords: [],
+      status: 'want', url: 'https://example.org/x', one_liner: '', basics_md: '', created_at: 't', updated_at: 't', why: '导师推荐',
+    }
+    s.t.papers.push(want)
+    const e = s.run(PAPER, 'paper')
+    const paper = s.t.papers.find((p) => p.status === 'read')!
+    const merged = mergeWant(s.t.imports.find((x) => x.id === e.id)!, paper, want, '2026-11-11T11:00:00.000Z')
+    for (const key of ['papers', 'imports'] as const) {
+      for (const row of merged[key]!) {
+        const table = s.t[key] as { id: string }[]
+        table[table.findIndex((r) => r.id === row.id)] = row
+      }
+    }
+    const after = s.t.papers.find((p) => p.id === paper.id)!
+    expect(after).toMatchObject({ url: 'https://example.org/x', why: '导师推荐' })
+    expect(s.live(s.t.papers)).toHaveLength(1)
+
+    s.undo(e.id).commit()
+    const left = s.live(s.t.papers)
+    expect(left).toHaveLength(1)
+    expect(left[0]).toMatchObject({ id: 'w1', status: 'want', title: 'living media draft', why: '导师推荐' })
   })
 })

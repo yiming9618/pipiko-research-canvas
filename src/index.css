@@ -2801,3 +2801,16 @@ select,
   align-self: flex-start;
   margin-left: -12px;
 }
+
+.result.is-question {
+  margin-top: 8px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.result-choices {
+  display: flex;
+  gap: 4px;
+}

@@ -256,3 +256,68 @@ date: 2026-12-03
     })
   })
 })
+
+describe('研究记录提到的论文、相似标题', () => {
+  const research = (dois: string, date = '2026-11-10') =>
+    `---\ntype: research\ndate: ${date}\ntitle: 记录\npapers: ${dois}\n---\n## 发现\na\n`
+  const want = (over: Partial<Paper>): Paper => ({
+    id: 'w1', title: '', authors: [], year: null, venue: '', doi: '', category: '', keywords: [],
+    status: 'want', url: '', one_liner: '', basics_md: '', created_at: 't', updated_at: 't', ...over,
+  })
+
+  it('papers 里库里没有的 DOI 自动加进想看，标记为 AI 提到的，记下来源', () => {
+    const { tables, run } = makeStore()
+    run(paperMd(), 'paper') // 10.1145/aaa is in the library
+    const out = run(research('10.1145/AAA, 10.1145/new1, 10.1145/new1, 10.1145/new2'))
+    const wants = tables.papers.filter((p) => p.status === 'want')
+    expect(wants.map((p) => p.doi)).toEqual(['10.1145/new1', '10.1145/new2'])
+    expect(wants[0]).toMatchObject({ added_by: 'ai', lookup: 'pending', title: '' })
+    expect(wants[0].mentioned_in).toEqual([{ date: '2026-11-10', record_id: tables.records[0].id }])
+    expect(out.entry?.wants_created).toHaveLength(2)
+    expect(out.message).toContain('提到的 2 篇论文库里没有，已加进"想看"')
+  })
+
+  it('第二份记录又提到同一篇：不重复添加，只多记一个来源', () => {
+    const { tables, run } = makeStore()
+    run(research('10.1145/new1', '2026-11-08'))
+    const out = run(research('10.1145/new1', '2026-11-10'))
+    const wants = tables.papers.filter((p) => p.status === 'want')
+    expect(wants).toHaveLength(1)
+    expect(wants[0].mentioned_in?.map((m) => m.date)).toEqual(['2026-11-08', '2026-11-10'])
+    expect(out.entry?.wants_created).toBeUndefined()
+    expect(out.entry?.mentions_added).toEqual([wants[0].id])
+  })
+
+  it('我自己加的想看被记录提到：不改动它', () => {
+    const { tables, run } = makeStore()
+    tables.papers.push(want({ doi: '10.1145/mine', added_by: 'me', title: '我加的' }))
+    run(research('10.1145/mine'))
+    expect(tables.papers).toHaveLength(1)
+    expect(tables.papers[0].mentioned_in).toBeUndefined()
+  })
+
+  it('AI 提到的想看，之后导入这篇论文：按 DOI 对上，转为已读', () => {
+    const { tables, run } = makeStore()
+    run(research('10.1145/aaa'))
+    const out = run(paperMd(), 'paper')
+    expect(tables.papers).toHaveLength(1)
+    expect(tables.papers[0]).toMatchObject({ status: 'read', title: 'Living Media Interfaces' })
+    expect(out.similar).toBeUndefined()
+  })
+
+  it('DOI 和标题都没对上，但想看里有相似标题：只是问，不自动合并', () => {
+    const { tables, run } = makeStore()
+    tables.papers.push(want({ title: 'living media interfaces paper' }))
+    const out = run(paperMd(), 'paper')
+    expect(tables.papers).toHaveLength(2)
+    expect(tables.papers[0].status).toBe('want')
+    expect(out.similar).toEqual({ paper_id: tables.papers[1].id, want_id: 'w1', want_title: 'living media interfaces paper' })
+  })
+
+  it('相似但两边 DOI 不同：不问', () => {
+    const { tables, run } = makeStore()
+    tables.papers.push(want({ title: 'living media interfaces paper', doi: '10.9/other' }))
+    expect(run(paperMd(), 'paper').similar).toBeUndefined()
+    expect(tables.papers).toHaveLength(2)
+  })
+})

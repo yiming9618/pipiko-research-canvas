@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { PAPER_PROMPT, RESEARCH_PROMPT } from '../../domain/templates'
 import type { ImportEntry, ImportKind } from '../../domain/types'
-import { runImport } from '../../store/actions'
+import { confirmSameAsWant, runImport } from '../../store/actions'
 import { copyText } from '../../ui/clipboard'
 import { IconCheck, IconCopy, IconUndo } from '../../ui/icons'
 import { useUndo } from '../../ui/useUndo'
@@ -11,6 +11,7 @@ interface Result {
   notices: string[]
   entry?: ImportEntry
   plain?: boolean
+  similar?: { paper_id: string; want_id: string; want_title: string }
 }
 
 const KIND_LABEL: Record<ImportKind, string> = { research: '研究记录', paper: '论文' }
@@ -30,7 +31,7 @@ export function PastePanel() {
     setBusy(true)
     try {
       const out = await runImport(text, kind)
-      setResult({ message: out.message, notices: out.notices, entry: out.entry, plain: !out.stored })
+      setResult({ message: out.message, notices: out.notices, entry: out.entry, plain: !out.stored, similar: out.similar })
       if (out.stored) setText('')
     } catch (err) {
       setResult({
@@ -41,6 +42,17 @@ export function PastePanel() {
     } finally {
       setBusy(false)
     }
+  }
+
+  const sameAsWant = async () => {
+    if (!result?.similar || !result.entry) return
+    const { paper_id, want_id } = result.similar
+    const ok = await confirmSameAsWant(result.entry.id, paper_id, want_id)
+    setResult({
+      ...result,
+      similar: undefined,
+      message: ok ? `${result.message}；想看里的那一条已经并进这篇论文` : result.message,
+    })
   }
 
   const copyTemplate = async () => {
@@ -120,6 +132,19 @@ export function PastePanel() {
                 撤销
               </button>
             )}
+          </div>
+        )}
+        {result?.similar && result.entry && (
+          <div className="result is-question">
+            <p className="result-text">这是不是想看里的「{result.similar.want_title}」？</p>
+            <div className="result-choices">
+              <button type="button" className="btn" onClick={() => void sameAsWant()}>
+                是，合并
+              </button>
+              <button type="button" className="btn btn-quiet" onClick={() => setResult({ ...result, similar: undefined })}>
+                不是
+              </button>
+            </div>
           </div>
         )}
       </div>

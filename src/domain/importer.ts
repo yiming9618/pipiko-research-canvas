@@ -3,6 +3,7 @@
 
 import { normalizeInput } from '../parser/frontmatter'
 import { parseMarkdown, type ParsedPaper, type ParsedResearch } from '../parser'
+import { SIMILAR_ENOUGH, titleSimilarity } from './similar'
 import {
   BUILTIN_TYPES,
   DEFAULT_TYPE_COLOR,
@@ -39,6 +40,8 @@ export interface ImportOutcome {
   notices: string[]
   changes: Changes
   entry?: ImportEntry
+  /** A paper import that matched nothing, but a "想看" entry has a similar title: ask before merging. */
+  similar?: { paper_id: string; want_id: string; want_title: string }
 }
 
 /** Small stable string hash (cyrb53), used to spot an identical paste. */
@@ -124,10 +127,17 @@ export function planImport(raw: string, ctx: ImportContext): ImportOutcome {
     message: '',
     updated_at: ctx.now,
   }
-  const changes =
-    parsed.kind === 'paper' ? importPaper(parsed, entry, ctx) : importResearch(parsed, entry, ctx)
+  let similar: ImportOutcome['similar']
+  let changes: Changes
+  if (parsed.kind === 'paper') {
+    const out = importPaper(parsed, entry, ctx)
+    changes = out.changes
+    similar = out.similar
+  } else {
+    changes = importResearch(parsed, entry, ctx)
+  }
   changes.imports = [entry]
-  return { stored: true, message: entry.message, notices: parsed.notices, changes, entry }
+  return { stored: true, message: entry.message, notices: parsed.notices, changes, entry, similar }
 }
 
 function importResearch(parsed: ParsedResearch, entry: ImportEntry, ctx: ImportContext): Changes {
@@ -158,10 +168,55 @@ function importResearch(parsed: ParsedResearch, entry: ImportEntry, ctx: ImportC
   const where = `${shortDate(parsed.date)} 的画板`
   entry.message =
     cards.length > 0 ? `生成了 ${cards.length} 张卡片，放进 ${where}` : `只有封面，放进 ${where}`
-  return { records: [record], cards }
+
+  // Papers the record names that the library does not have go to "想看", marked as mentioned by the AI.
+  const papers: Paper[] = []
+  const created: string[] = []
+  const mentioned: string[] = []
+  const source = { date: parsed.date, record_id: record.id }
+  for (const doi of [...new Set(parsed.paper_dois)]) {
+    const have = ctx.papers.find((p) => !p.deleted && p.doi === doi)
+    if (!have) {
+      const id = ctx.newId('paper')
+      papers.push({
+        id,
+        title: '',
+        authors: [],
+        year: null,
+        venue: '',
+        doi,
+        category: '',
+        keywords: [],
+        status: 'want',
+        url: '',
+        one_liner: '',
+        basics_md: '',
+        created_at: ctx.now,
+        updated_at: ctx.now,
+        why: '',
+        added_by: 'ai',
+        mentioned_in: [source],
+        lookup: 'pending',
+      })
+      created.push(id)
+    } else if (have.status === 'want' && have.added_by === 'ai') {
+      papers.push({ ...have, mentioned_in: [...(have.mentioned_in ?? []), source], updated_at: ctx.now })
+      mentioned.push(have.id)
+    }
+  }
+  if (created.length > 0) {
+    entry.wants_created = created
+    entry.message += `；提到的 ${created.length} 篇论文库里没有，已加进"想看"`
+  }
+  if (mentioned.length > 0) entry.mentions_added = mentioned
+  return { records: [record], cards, ...(papers.length > 0 ? { papers } : {}) }
 }
 
-function importPaper(parsed: ParsedPaper, entry: ImportEntry, ctx: ImportContext): Changes {
+function importPaper(
+  parsed: ParsedPaper,
+  entry: ImportEntry,
+  ctx: ImportContext,
+): { changes: Changes; similar?: ImportOutcome['similar'] } {
   const existing = findPaper(ctx.papers, parsed.doi, parsed.title)
   const effects: PaperImportEffects = {
     paper_created: !existing,
@@ -286,5 +341,18 @@ function importPaper(parsed: ParsedPaper, entry: ImportEntry, ctx: ImportContext
   }
   entry.message = parts.join('；')
 
-  return { papers: [paper], blocks, comments, types: newTypes }
+  // Nothing matched by DOI or exact title. A "想看" entry with a similar title might be this paper: ask.
+  let similar: ImportOutcome['similar']
+  if (!existing) {
+    const candidates = ctx.papers
+      .filter((p) => !p.deleted && p.status === 'want' && p.title !== '' && !(parsed.doi && p.doi && p.doi !== parsed.doi))
+      .map((p) => ({ p, score: titleSimilarity(p.title, parsed.title) }))
+      .filter((c) => c.score >= SIMILAR_ENOUGH)
+      .sort((a, b) => b.score - a.score || (a.p.id < b.p.id ? -1 : 1))
+    if (candidates.length > 0) {
+      similar = { paper_id: paper.id, want_id: candidates[0].p.id, want_title: candidates[0].p.title }
+    }
+  }
+
+  return { changes: { papers: [paper], blocks, comments, types: newTypes }, similar }
 }

@@ -28,6 +28,8 @@ export interface UndoSnapshot {
   boardItems: BoardItem[]
   connectors: Connector[]
   piles: Pile[]
+  /** Papers the person has put somewhere on purpose (a discussion box); never removed silently. */
+  keptPaperIds?: Set<string>
 }
 
 export interface UndoPlan {
@@ -86,6 +88,24 @@ export function planUndo(entry: ImportEntry, snap: UndoSnapshot, now: ISODateTim
       ],
       '张卡片',
     )
+
+    // "想看" entries that exist only because this record named them.
+    const recordIds = new Set(records.map((r) => r.id))
+    const created = new Set(entry.wants_created ?? [])
+    const papers: Paper[] = []
+    for (const id of new Set([...created, ...(entry.mentions_added ?? [])])) {
+      const paper = snap.papers.find((p) => p.id === id && !p.deleted)
+      if (!paper) continue
+      const rest = (paper.mentioned_in ?? []).filter((m) => !recordIds.has(m.record_id))
+      const onlyFromHere = created.has(id) && rest.length === 0 && paper.status === 'want' && paper.added_by === 'ai'
+      if (onlyFromHere && !paper.touched && !paper.why && !(snap.keptPaperIds?.has(id) ?? false)) {
+        papers.push(tomb(paper))
+      } else {
+        if (onlyFromHere) impacts.push(`想看里的「${paper.title || paper.doi}」你动过，会保留在想看里`)
+        papers.push({ ...paper, mentioned_in: rest, updated_at: now })
+      }
+    }
+    if (papers.length > 0) changes.papers = papers
     return { impacts, changes }
   }
 
@@ -127,6 +147,11 @@ export function planUndo(entry: ImportEntry, snap: UndoSnapshot, now: ISODateTim
       }
       changes.papers = [restored]
     }
+  }
+
+  // The "想看" entry that was merged into this paper comes back as it was.
+  if (effects?.merged_want) {
+    changes.papers = [...(changes.papers ?? []), { ...effects.merged_want, updated_at: now }]
   }
 
   if (effects && effects.types_created.length > 0) {

@@ -27,6 +27,10 @@ export interface ImportEntry extends Synced {
   record_id?: string
   /** What this import changed on an existing paper, so undo can reverse it. */
   effects?: PaperImportEffects
+  /** Research imports: "想看" entries created because the record named a DOI the library did not have. */
+  wants_created?: string[]
+  /** Research imports: existing AI-mentioned entries that gained this record as a source. */
+  mentions_added?: string[]
 }
 
 export interface PaperImportEffects {
@@ -37,6 +41,8 @@ export interface PaperImportEffects {
   filled: PaperFillable[]
   keywords_added: string[]
   types_created: string[]
+  /** A "想看" entry the person confirmed was this paper; kept whole so undo can bring it back. */
+  merged_want?: Paper
 }
 
 export type PaperFillable =
@@ -72,6 +78,8 @@ export interface Paper extends Synced {
   mentioned_in?: { date: ISODate; record_id: string }[]
   /** Crossref lookup by DOI. Absent = never asked. 'pending' is retried when the device is online. */
   lookup?: 'pending' | 'done' | 'failed'
+  /** Set once the person edits the entry's details by hand (matters for AI-mentioned entries on undo). */
+  touched?: boolean
 }
 
 /** A highlight block (重点区块) or an unrecognised section of a paper. */

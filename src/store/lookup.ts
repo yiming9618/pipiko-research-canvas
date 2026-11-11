@@ -23,9 +23,10 @@ export async function runLookups(): Promise<void> {
           headers: { Accept: 'application/json' },
         })
       } catch {
-        return // offline: leave everything waiting
+        if (!navigator.onLine) return // offline: leave everything waiting
+        continue // this one did not get through; the others may
       }
-      if (res.status === 429 || res.status >= 500) return // busy: try again another time
+      if (res.status === 429 || res.status >= 500) continue // busy: stays waiting, tried again another time
       const info = res.ok ? parseCrossref(await res.json().catch(() => null)) : null
       // read again: it may have been edited while the request was out
       const paper = await db.papers.get(snapshot.id)

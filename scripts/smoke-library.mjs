@@ -123,6 +123,9 @@ for (const size of sizes) {
         }),
       })
     }
+    if (doi === '10.1145/test.ai') {
+      return route.fulfill({ status: 200, headers: cors, body: JSON.stringify({ message: { title: ['AI 提到的论文标题'], issued: { 'date-parts': [[2022]] } } }) })
+    }
     if (doi === '10.1145/test.offline') return route.abort()
     return route.fulfill({ status: 404, headers: cors, body: 'Resource not found.' })
   })
@@ -315,6 +318,47 @@ for (const size of sizes) {
   await page.getByRole('heading', { name: '直接加成已读的论文', level: 1 }).waitFor()
   check(`${tag} 添加时选“已读”：得到一个空的论文页`, true)
   await page.screenshot({ path: `${out}/${size.name}-lib-5-empty-paper.png`, fullPage: true })
+
+  // ── papers a research record mentions; similar titles
+  const paste = async (md, expect) => {
+    await page.goto(url)
+    await page.locator('.md-input').fill(md)
+    await page.getByRole('button', { name: '放进去' }).click()
+    await page.getByText(expect).first().waitFor()
+  }
+  await paste(
+    '---\ntype: research\ndate: 2026-11-09\ntitle: 提到新论文的记录\npapers: 10.1145/test.ai\n---\n## 发现\n内容\n',
+    /提到的 1 篇论文库里没有，已加进"想看"/,
+  )
+  check(`${tag} 记录里提到、库里没有的 DOI：结果里说明加进了想看`, true)
+  await page.goto(`${url}#/library`)
+  await page.getByRole('button', { name: /^想看/ }).click()
+  const aiHead = page.getByRole('button', { name: /AI 提到的/ })
+  check(`${tag} “AI 提到的”单独一组，默认折叠`, (await aiHead.getAttribute('aria-expanded')) === 'false')
+  await aiHead.click()
+  const aiItem = page.locator('.want-item', { hasText: 'AI 提到的论文标题' })
+  await aiItem.waitFor()
+  check(`${tag} AI 提到的条目用 Crossref 补全了标题`, true)
+  await page.screenshot({ path: `${out}/${size.name}-lib-6-ai-want.png`, fullPage: true })
+  await aiItem.getByRole('link', { name: '11/9' }).click()
+  await page.getByRole('heading', { name: '11/9', level: 1 }).waitFor()
+  check(`${tag} 点来源跳到那一天的画板`, true)
+
+  await page.goto(`${url}#/library`)
+  await add({ 标题: 'slow technology reflection draft' }, '想看')
+  await page.locator('.want-item', { hasText: 'slow technology reflection draft' }).waitFor()
+  await paste(
+    '---\ntype: paper\ntitle: Slow Technology: Designing for Reflection\nyear: 2001\ndate: 2026-11-09\n---\n## 一句话总结\n总结\n',
+    /这是不是想看里的「slow technology reflection draft」/,
+  )
+  check(`${tag} 相似标题：只是问，不自动合并`, true)
+  await page.screenshot({ path: `${out}/${size.name}-lib-7-similar.png` })
+  await page.getByRole('button', { name: '是，合并' }).click()
+  await page.getByText(/想看里的那一条已经并进这篇论文/).waitFor()
+  await page.goto(`${url}#/library`)
+  await page.getByRole('button', { name: /^想看/ }).click()
+  await page.waitForTimeout(300)
+  check(`${tag} 确认后想看里的那条并进了论文`, (await page.locator('.want-item', { hasText: 'slow technology reflection draft' }).count()) === 0)
 
   check(`${tag} 没有报错`, errors.filter((e) => !e.includes('Failed to load resource')).length === 0, errors.join(' | '))
   await ctx.close()
