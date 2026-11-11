@@ -3089,3 +3089,14 @@ select,
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
+
+.field-hint {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.field input[type='date'] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+}

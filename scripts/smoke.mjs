@@ -45,6 +45,7 @@ date: 2026-11-10
 const sizes = [
   { name: 'phone', width: 390, height: 844, isMobile: true, hasTouch: true },
   { name: 'ipad', width: 1366, height: 1024, isMobile: false, hasTouch: true },
+  { name: 'mac', width: 1728, height: 1000, isMobile: false, hasTouch: false },
 ]
 
 const browser = await chromium.launch()

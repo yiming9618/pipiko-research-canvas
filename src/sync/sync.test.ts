@@ -254,3 +254,17 @@ describe('令牌失效时的提示', () => {
     expect(explainFailure(404, false).steps.length).toBeGreaterThan(0)
   })
 })
+
+describe('令牌到期提醒', () => {
+  it('到期前 7 天开始提醒，之前不提醒；没填日期不提醒', async () => {
+    const { daysLeft, expiringSoon } = await import('./controller')
+    expect(daysLeft('2027-02-09', '2027-02-01')).toBe(8)
+    expect(expiringSoon('2027-02-09', '2027-02-01')).toBe(false)
+    expect(expiringSoon('2027-02-09', '2027-02-02')).toBe(true)
+    expect(daysLeft('2027-02-09', '2027-02-09')).toBe(0)
+    expect(expiringSoon('2027-02-09', '2027-02-20')).toBe(true)
+    expect(daysLeft('2027-02-09', '2027-02-20')).toBe(-11)
+    expect(expiringSoon(null, '2027-02-20')).toBe(false)
+    expect(expiringSoon('不是日期', '2027-02-20')).toBe(false)
+  })
+})

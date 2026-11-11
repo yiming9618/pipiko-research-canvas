@@ -3,7 +3,7 @@ import { activeBoxes } from '../domain/discussions'
 import { db } from '../store/db'
 import { IconChat, IconSettings } from './icons'
 import { SearchBox } from './SearchBox'
-import { useSync } from '../views/settings/SyncSection'
+import { useExpiryReminder, useSync } from '../views/settings/SyncSection'
 
 type Place = 'home' | 'board' | 'library' | 'settings' | 'discussions'
 
@@ -15,6 +15,7 @@ const LINKS: { place: Place; href: string; label: string }[] = [
 
 export function TopNav({ current }: { current: Place }) {
   const stopped = useSync().phase === 'problem'
+  const expiring = useExpiryReminder()
   const boxes = useLiveQuery(async () => activeBoxes(await db.discussions.toArray()).length) ?? 0
   return (
     <nav className="topnav" aria-label="主导航">
@@ -43,11 +44,11 @@ export function TopNav({ current }: { current: Place }) {
         <a
           className="icon-btn"
           href="#/settings"
-          aria-label={stopped ? '设置（同步停了）' : '设置'}
+          aria-label={stopped ? '设置（同步停了）' : expiring ? '设置（令牌快到期了）' : '设置'}
           aria-current={current === 'settings' ? 'page' : undefined}
         >
           <IconSettings />
-          {stopped && <span className="sync-dot" aria-hidden="true" />}
+          {(stopped || expiring) && <span className="sync-dot" aria-hidden="true" />}
         </a>
       </div>
     </nav>

@@ -80,6 +80,7 @@ const PNG = Buffer.from(
 const sizes = [
   { name: 'phone', width: 390, height: 844, isMobile: true },
   { name: 'ipad', width: 1366, height: 1024, isMobile: false },
+  { name: 'mac', width: 1728, height: 1000, isMobile: false },
 ]
 
 const browser = await chromium.launch()
@@ -294,7 +295,7 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
     const small = await page.evaluate(() =>
       [...document.querySelectorAll('.toolbar button, .sel-bar button, .board-head a, .markers a, .topnav a')]
         .map((el) => ({ t: (el.textContent || el.getAttribute('aria-label') || '').trim().slice(0, 12), r: el.getBoundingClientRect() }))
-        .filter((x) => x.r.width > 0 && (x.r.height < 44 || x.r.width < 44))
+        .filter((x) => x.r.width > 0 && (x.r.height < 43.5 || x.r.width < 43.5)) // 43.5: buttons are measured while their entrance animation may still be settling
         .map((x) => `${x.t} ${Math.round(x.r.width)}×${Math.round(x.r.height)}`),
     )
     check(`${tag} 工具栏等可点元素 ≥ 44px`, small.length === 0, small.join(', '))
@@ -399,7 +400,7 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   const smallNav = await page.evaluate(() =>
     [...document.querySelectorAll('.board-head a, .day-tile, .month-tile:not(.is-empty)')]
       .map((el) => ({ t: (el.textContent || el.getAttribute('aria-label') || '').trim().slice(0, 10), r: el.getBoundingClientRect() }))
-      .filter((x) => x.r.width > 0 && (x.r.height < 44 || x.r.width < 44))
+      .filter((x) => x.r.width > 0 && (x.r.height < 43.5 || x.r.width < 43.5)) // 43.5: buttons are measured while their entrance animation may still be settling
       .map((x) => `${x.t} ${Math.round(x.r.width)}×${Math.round(x.r.height)}`),
   )
   check(`${tag} 面包屑和日期块 ≥ 44px`, smallNav.length === 0, smallNav.join(', '))

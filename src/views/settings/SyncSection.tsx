@@ -1,13 +1,17 @@
 import { useState, useSyncExternalStore, type FormEvent } from 'react'
 import {
   connectSync,
+  daysLeft,
   disconnectSync,
+  expiringSoon,
   getSyncState,
   needsAttention,
   replaceToken,
+  setTokenExpiry,
   subscribeSync,
   syncNow,
 } from '../../sync/controller'
+import { todayLocal } from '../../store/db'
 
 export function useSync() {
   return useSyncExternalStore(subscribeSync, getSyncState)
@@ -43,12 +47,30 @@ function TokenField({ value, onChange }: { value: string; onChange: (v: string) 
   )
 }
 
+function ExpiryField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <label className="field">
+      <span>令牌的到期日（可以不填）</span>
+      <input type="date" value={value} onChange={(e) => onChange(e.target.value)} />
+      <span className="field-hint">生成令牌时 GitHub 会显示。填了的话，到期前 7 天会在设置图标上提醒你。</span>
+    </label>
+  )
+}
+
+/** True when the settings icon should carry a dot for the token's expiry. */
+export function useExpiryReminder(): boolean {
+  const sync = useSync()
+  return sync.phase !== 'off' && expiringSoon(sync.expires, todayLocal())
+}
+
 export function SyncSection() {
   const sync = useSync()
   const [owner, setOwner] = useState(guessOwner)
   const [repo, setRepo] = useState('')
   const [token, setToken] = useState('')
   const [changing, setChanging] = useState(false)
+  const [expires, setExpires] = useState('')
+  const [datingOnly, setDatingOnly] = useState(false)
 
   const connect = async (e: FormEvent) => {
     e.preventDefault()
@@ -57,15 +79,17 @@ export function SyncSection() {
     const o = parts.length > 1 ? parts[0] : owner.trim()
     const r = parts.length > 1 ? parts[1] : (parts[0] ?? '')
     if (!o || !r || !token.trim()) return
-    await connectSync({ owner: o, repo: r, token: token.trim() })
+    await connectSync({ owner: o, repo: r, token: token.trim(), ...(expires ? { expires } : {}) })
     setToken('')
+    setExpires('')
   }
 
   const change = async (e: FormEvent) => {
     e.preventDefault()
     if (!token.trim()) return
-    await replaceToken(token.trim())
+    await replaceToken(token.trim(), expires)
     setToken('')
+    setExpires('')
     setChanging(false)
   }
 
@@ -86,6 +110,7 @@ export function SyncSection() {
             <input value={repo} onChange={(e) => setRepo(e.target.value)} autoCapitalize="off" autoCorrect="off" spellCheck={false} required />
           </label>
           <TokenField value={token} onChange={setToken} />
+          <ExpiryField value={expires} onChange={setExpires} />
           <div className="row-actions">
             <button type="submit" className="btn">
               连接并同步
@@ -97,6 +122,8 @@ export function SyncSection() {
   }
 
   const problem = sync.phase === 'problem' ? sync.problem : null
+  const left = daysLeft(sync.expires, todayLocal())
+  const soon = left !== null && left <= 7
   return (
     <section className="section" aria-labelledby="s-sync">
       <h2 id="s-sync">同步</h2>
@@ -123,9 +150,55 @@ export function SyncSection() {
         </p>
       )}
 
+      {soon && !problem && (
+        <div className="sync-problem is-urgent" role="alert">
+          <p>
+            {left! < 0
+              ? `按你填的日期，令牌已经在 ${sync.expires} 到期了。`
+              : left === 0
+                ? '令牌今天到期。'
+                : `令牌还有 ${left} 天到期（${sync.expires}）。`}
+            到期后同步会停下，这台设备上的内容不受影响。现在就可以换一个新的：在 GitHub 上重新生成令牌（只授权数据仓库，Contents 读写），再点下面的"更换令牌"。
+          </p>
+        </div>
+      )}
+      {!soon && (
+        <p className="section-note">
+          {sync.expires ? `令牌到期日：${sync.expires}。` : '还没有填令牌的到期日，到期前不会有提醒。'}
+          {!datingOnly && !changing && (
+            <button type="button" className="link-btn" onClick={() => { setExpires(sync.expires ?? ''); setDatingOnly(true) }}>
+              {sync.expires ? '修改' : '填写到期日'}
+            </button>
+          )}
+        </p>
+      )}
+      {datingOnly && !changing && (
+        <form
+          className="sync-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void setTokenExpiry(expires).then(() => {
+              setDatingOnly(false)
+              setExpires('')
+            })
+          }}
+        >
+          <ExpiryField value={expires} onChange={setExpires} />
+          <div className="row-actions">
+            <button type="submit" className="btn">
+              保存到期日
+            </button>
+            <button type="button" className="btn btn-quiet" onClick={() => { setDatingOnly(false); setExpires('') }}>
+              取消
+            </button>
+          </div>
+        </form>
+      )}
+
       {changing ? (
         <form className="sync-form" onSubmit={(e) => void change(e)}>
           <TokenField value={token} onChange={setToken} />
+          <ExpiryField value={expires} onChange={setExpires} />
           <div className="row-actions">
             <button type="submit" className="btn">
               保存并同步
@@ -140,7 +213,7 @@ export function SyncSection() {
           <button type="button" className="btn" onClick={syncNow} disabled={sync.phase === 'syncing'}>
             现在同步
           </button>
-          <button type="button" className="btn" onClick={() => setChanging(true)}>
+          <button type="button" className="btn" onClick={() => { setDatingOnly(false); setExpires(''); setChanging(true) }}>
             更换令牌
           </button>
           <button

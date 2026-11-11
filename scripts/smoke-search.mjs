@@ -1,5 +1,5 @@
 // Walks global search in a headless browser at phone and iPad sizes, starting from the sample content.
-// Usage: node scripts/smoke-search.mjs <url> <screenshot-dir>     (ONLY=ipad|phone to run one size)
+// Usage: node scripts/smoke-search.mjs <url> <screenshot-dir>     (ONLY=ipad|phone|mac to run one size)
 import { chromium } from 'playwright'
 
 const url = process.argv[2] ?? 'http://localhost:5173/'
@@ -8,6 +8,7 @@ const out = process.argv[3] ?? '.'
 const sizes = [
   { name: 'phone', width: 390, height: 844, isMobile: true },
   { name: 'ipad', width: 1366, height: 1024, isMobile: false },
+  { name: 'mac', width: 1728, height: 1000, isMobile: false },
 ]
 
 const browser = await chromium.launch()

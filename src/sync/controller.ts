@@ -15,6 +15,8 @@ export interface SyncConfig {
   owner: string
   repo: string
   token: string
+  /** When the token stops working (YYYY-MM-DD), as typed in by the person. GitHub does not tell the page. */
+  expires?: string
 }
 
 export interface SyncState {
@@ -26,9 +28,26 @@ export interface SyncState {
   problem: { kind: SyncProblemKind; message: string; steps: string[] } | null
   /** Entries received in the latest round (to tell the person something arrived). */
   pulled: number
+  /** The token's expiry date, if the person filled it in. */
+  expires: string | null
 }
 
-let state: SyncState = { phase: 'off', owner: '', repo: '', lastSyncAt: null, problem: null, pulled: 0 }
+export const REMIND_DAYS = 7
+
+/** Whole days until the token expires (0 = today, negative = already past). null when no date is known. */
+export function daysLeft(expires: string | null, today: string): number | null {
+  if (!expires || !/^\d{4}-\d{2}-\d{2}$/.test(expires)) return null
+  const ms = Date.parse(`${expires}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)
+  return Number.isFinite(ms) ? Math.round(ms / 86_400_000) : null
+}
+
+/** True from seven days before the expiry date onwards. */
+export function expiringSoon(expires: string | null, today: string): boolean {
+  const left = daysLeft(expires, today)
+  return left !== null && left <= REMIND_DAYS
+}
+
+let state: SyncState = { phase: 'off', owner: '', repo: '', lastSyncAt: null, problem: null, pulled: 0, expires: null }
 let config: SyncConfig | null = null
 let scheduler: SyncScheduler | null = null
 let retry: ReturnType<typeof setTimeout> | null = null
@@ -75,7 +94,7 @@ function start(next: SyncConfig): void {
   config = next
   scheduler?.stop()
   scheduler = new SyncScheduler({ run: round })
-  set({ owner: next.owner, repo: next.repo, problem: null, phase: 'syncing' })
+  set({ owner: next.owner, repo: next.repo, problem: null, phase: 'syncing', expires: next.expires ?? null })
   scheduler.runNow()
 }
 
@@ -113,9 +132,18 @@ export async function connectSync(next: SyncConfig): Promise<void> {
 }
 
 /** Same repo, new token (the old one expired). */
-export async function replaceToken(token: string): Promise<void> {
+export async function replaceToken(token: string, expires?: string): Promise<void> {
   if (!config) return
-  await connectSync({ ...config, token })
+  await connectSync({ owner: config.owner, repo: config.repo, token, ...(expires ? { expires } : {}) })
+}
+
+/** Records (or clears) the expiry date of the token already in use. Nothing is synced again. */
+export async function setTokenExpiry(expires: string): Promise<void> {
+  if (!config) return
+  const next: SyncConfig = { owner: config.owner, repo: config.repo, token: config.token, ...(expires ? { expires } : {}) }
+  config = next
+  await db.device.put({ key: CONFIG_KEY, value: next })
+  set({ expires: next.expires ?? null })
 }
 
 export function syncNow(): void {
@@ -129,5 +157,5 @@ export async function disconnectSync(): Promise<void> {
   config = null
   if (retry) clearTimeout(retry)
   await db.device.delete(CONFIG_KEY)
-  set({ phase: 'off', problem: null, owner: '', repo: '' })
+  set({ phase: 'off', problem: null, owner: '', repo: '', expires: null })
 }
