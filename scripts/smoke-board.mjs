@@ -83,6 +83,29 @@ const sizes = [
   { name: 'mac', width: 1728, height: 1000, isMobile: false },
 ]
 
+/** Resolves when every finite animation on the page has finished (looping decorations are ignored). */
+/**
+ * Resolves when the view is shown and every finite animation has finished
+ * (looping decorations are ignored), so sizes are measured at rest.
+ */
+const settled = async (page) => {
+  // the year / month grids stay hidden until their data has loaded, then play an entrance animation
+  await page.waitForFunction(() => {
+    const stage = document.querySelector('.stage')
+    return !stage || getComputedStyle(stage).visibility === 'visible'
+  })
+  for (let i = 0; i < 2; i++) {
+    await page.evaluate(() =>
+      Promise.all(
+        document
+          .getAnimations()
+          .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+          .map((a) => a.finished.catch(() => undefined)),
+      ).then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))),
+    )
+  }
+}
+
 const browser = await chromium.launch()
 let failed = false
 const check = (label, ok, detail = '') => {
@@ -292,10 +315,12 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
     await page.locator('.node.photo img').waitFor()
     check(`${tag} 上传贴图`, true)
 
+    // measure only once every entrance animation has finished
+    await settled(page)
     const small = await page.evaluate(() =>
       [...document.querySelectorAll('.toolbar button, .sel-bar button, .board-head a, .markers a, .topnav a')]
         .map((el) => ({ t: (el.textContent || el.getAttribute('aria-label') || '').trim().slice(0, 12), r: el.getBoundingClientRect() }))
-        .filter((x) => x.r.width > 0 && (x.r.height < 43.5 || x.r.width < 43.5)) // 43.5: buttons are measured while their entrance animation may still be settling
+        .filter((x) => x.r.width > 0 && (x.r.height < 44 || x.r.width < 44))
         .map((x) => `${x.t} ${Math.round(x.r.width)}×${Math.round(x.r.height)}`),
     )
     check(`${tag} 工具栏等可点元素 ≥ 44px`, small.length === 0, small.join(', '))
@@ -366,10 +391,12 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   await page.getByRole('link', { name: '2026', exact: true }).click()
   await page.getByRole('heading', { name: '2026', level: 1 }).waitFor()
   check(`${tag} 面包屑：日 → 月 → 年`, true)
-  check(`${tag} 年视图 12 个月份块`, (await page.locator('.month-tile').count()) === 12)
+  const thisMonth = (await page.evaluate(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }))
+  const expectTiles = thisMonth.startsWith('2026') && thisMonth !== '2026-11' ? 2 : 1
+  check(`${tag} 年视图只显示有内容的月份（和当前月份）`, (await page.locator('.month-tile').count()) === expectTiles, `${await page.locator('.month-tile').count()} 个`)
   const nov = page.locator('.month-tile[data-zoom="2026-11"]')
   check(`${tag} 月份块显示最多 3 条标题`, (await nov.locator('.tile-title').count()) === 3 && (await nov.getByText('和老师讨论方向').isVisible()))
-  check(`${tag} 没有记录的月份淡化且不可点`, (await page.locator('.month-tile.is-empty').count()) === 11)
+  check(`${tag} 年视图里每个月份块都能点进去`, (await page.locator('.month-tile:not(a[href])').count()) === 0)
   await page.waitForTimeout(400)
   await page.screenshot({ path: `${out}/${size.name}-time-2-year.png` })
 
@@ -392,15 +419,33 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   await zoom(vpNow.width - 120, vpNow.height / 2, 'out')
   await page.getByRole('heading', { name: '2026', level: 1 }).waitFor()
   check(`${tag} 月视图缩小 → 回到年`, true)
+  await page.waitForTimeout(600)
+
+  // back in again from the same spot, which is not on any month tile: the nearest month opens
+  await zoom(vpNow.width - 120, vpNow.height / 2, 'in')
+  await page.getByRole('heading', { name: /月$/, level: 1 }).waitFor()
+  check(`${tag} 缩小到年之后，原地再放大 → 回到月份（不用对准月份块）`, true)
+  await page.waitForTimeout(600)
+  await zoom(vpNow.width - 120, vpNow.height / 2, 'out')
+  await page.getByRole('heading', { name: '2026', level: 1 }).waitFor()
+  await page.waitForTimeout(600)
+  await page.locator('.month-tile[data-zoom="2026-11"]').click()
+  await page.getByRole('heading', { name: '11 月', level: 1 }).waitFor()
+  check(`${tag} 年视图里点月份块 → 进入那个月`, true)
+  await page.waitForTimeout(400)
+  await page.getByRole('link', { name: '2026', exact: true }).click()
+  await page.getByRole('heading', { name: '2026', level: 1 }).waitFor()
+  check(`${tag} 面包屑再回到年`, true)
 
   await page.goBack()
   await page.getByRole('heading', { name: '11 月', level: 1 }).waitFor()
   check(`${tag} 浏览器后退回到上一层`, true)
 
+  await settled(page)
   const smallNav = await page.evaluate(() =>
-    [...document.querySelectorAll('.board-head a, .day-tile, .month-tile:not(.is-empty)')]
+    [...document.querySelectorAll('.board-head a, .day-tile, .blank-day, .month-tile')]
       .map((el) => ({ t: (el.textContent || el.getAttribute('aria-label') || '').trim().slice(0, 10), r: el.getBoundingClientRect() }))
-      .filter((x) => x.r.width > 0 && (x.r.height < 43.5 || x.r.width < 43.5)) // 43.5: buttons are measured while their entrance animation may still be settling
+      .filter((x) => x.r.width > 0 && (x.r.height < 44 || x.r.width < 44))
       .map((x) => `${x.t} ${Math.round(x.r.width)}×${Math.round(x.r.height)}`),
   )
   check(`${tag} 面包屑和日期块 ≥ 44px`, smallNav.length === 0, smallNav.join(', '))

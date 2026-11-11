@@ -126,4 +126,31 @@ describe('这台设备（IndexedDB）与数据仓库的同步', () => {
     expect((await db.discussionItems.toArray()).map((i) => i.id).sort()).toEqual(['i-ipad', 'i-ipad-2', 'i-phone'])
     expect(phone.all('discussionItems').map((i) => i.id).sort()).toEqual(['i-ipad', 'i-ipad-2', 'i-phone'])
   })
+
+  it('手动卡片：iPad 手写一张，同时手机导入同一天的记录，两边都保留在同一个文件里', async () => {
+    const remote = new MemoryRemote()
+    const phone = new MemoryLocal()
+    const manual = { id: 'card-hand', record_id: '', date: '2026-11-10', kind: '问题', heading: '问题', body_md: '手写的', order: 1, updated_at: now() }
+    await applyChanges({ cards: [manual] } as never)
+    phone.write('cards', card('card-imported', '手机导入的', now()))
+
+    await syncOnce(new DexieLocal(), remote, now)
+    await syncOnce(phone, remote, now)
+    await syncOnce(new DexieLocal(), remote, now)
+
+    expect((await db.cards.toArray()).map((c) => c.id).sort()).toEqual(['card-hand', 'card-imported'])
+    expect(phone.all('cards').map((c) => c.id).sort()).toEqual(['card-hand', 'card-imported'])
+    const file = remote.files.get('data/days/2026-11-10.json')!
+    expect(file).toContain('手写的')
+    expect(file).toContain('手机导入的')
+
+    // edited on one device, deleted on the other later: the later change wins, entry by entry
+    await applyChanges({ cards: [{ ...manual, body_md: '改过的', updated_at: '2026-11-11T01:00:00.000Z' }] } as never)
+    phone.write('cards', { ...manual, deleted: true, updated_at: '2026-11-11T02:00:00.000Z' } as never)
+    await syncOnce(new DexieLocal(), remote, now)
+    await syncOnce(phone, remote, now)
+    await syncOnce(new DexieLocal(), remote, now)
+    expect((await db.cards.get('card-hand'))?.deleted).toBe(true)
+    expect((await db.cards.get('card-imported'))?.deleted).toBeUndefined()
+  })
 })

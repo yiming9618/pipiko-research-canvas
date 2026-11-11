@@ -28,6 +28,8 @@ export function defaultLayout(
   records: LayoutRecord[],
   heightOf: (key: string) => number,
   columns: 1 | 2 = 2,
+  /** Cards written by hand: no record, so no cover. They go after the records, in the same columns. */
+  loose: string[] = [],
 ): Map<string, Placed> {
   const out = new Map<string, Placed>()
   const fullWidth = CARD_W * columns + GAP * (columns - 1)
@@ -46,6 +48,14 @@ export function defaultLayout(
       colY[col] += heightOf(key) + GAP
     }
     y = Math.max(...colY) - GAP + RECORD_GAP
+  }
+  const colY = Array.from({ length: columns }, () => y)
+  for (const id of loose) {
+    const key = cardKey(id)
+    let col = 0
+    for (let i = 1; i < columns; i++) if (colY[i] < colY[col]) col = i
+    out.set(key, { x: col * (CARD_W + GAP), y: colY[col], w: CARD_W })
+    colY[col] += heightOf(key) + GAP
   }
   return out
 }

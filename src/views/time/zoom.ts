@@ -94,6 +94,25 @@ interface PinchOptions {
   onOut?: () => void
 }
 
+/** The tile whose centre is closest to a point (so a pinch between tiles still opens something). */
+function nearestTile(within: HTMLElement, x: number, y: number): HTMLElement | null {
+  let best: HTMLElement | null = null
+  let bestDist = Infinity
+  for (const tile of within.querySelectorAll<HTMLElement>('[data-zoom]')) {
+    const r = tile.getBoundingClientRect()
+    if (r.width === 0) continue
+    // distance to the tile's edge (0 when inside), so a big tile is not penalised for its size
+    const dx = Math.max(r.left - x, 0, x - r.right)
+    const dy = Math.max(r.top - y, 0, y - r.bottom)
+    const d = Math.hypot(dx, dy)
+    if (d < bestDist) {
+      bestDist = d
+      best = tile
+    }
+  }
+  return best
+}
+
 const IN_AT = 1.28
 const OUT_AT = 0.8
 
@@ -146,7 +165,8 @@ export function usePinchNav(
       active = false
       const { onIn, onOut } = latest.current
       if (scale >= IN_AT && onIn) {
-        const tile = document.elementFromPoint(at.x, at.y)?.closest<HTMLElement>('[data-zoom]') ?? null
+        // The tile under the fingers; between tiles, or when the browser gave no position, the nearest one.
+        const tile = document.elementFromPoint(at.x, at.y)?.closest<HTMLElement>('[data-zoom]') ?? nearestTile(el, at.x, at.y)
         if (tile) {
           el.style.transform = ''
           rememberOrigin(tile)
@@ -163,13 +183,29 @@ export function usePinchNav(
       settle()
     }
 
+    // On iPad and iPhone the gesture events carry no position, so remember where the two fingers are.
+    let fingers: { x: number; y: number } | null = null
+    const onTouch = (e: TouchEvent) => {
+      if (e.touches.length >= 2) {
+        fingers = {
+          x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+          y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+        }
+      } else if (e.touches.length === 0) {
+        fingers = null
+      }
+    }
+
     // Safari (iPad, iPhone, Mac trackpad) reports pinches as gesture events.
     const onGestureStart = (e: Event) => {
       const g = e as Event & { clientX?: number; clientY?: number }
       e.preventDefault()
       safariGesture = true
       const r = el.getBoundingClientRect()
-      begin(g.clientX ?? r.left + r.width / 2, g.clientY ?? window.innerHeight / 2)
+      const hasPoint = typeof g.clientX === 'number' && typeof g.clientY === 'number' && (g.clientX !== 0 || g.clientY !== 0)
+      if (hasPoint) begin(g.clientX!, g.clientY!)
+      else if (fingers) begin(fingers.x, fingers.y)
+      else begin(r.left + r.width / 2, Math.min(r.top + r.height / 2, window.innerHeight / 2))
     }
     const onGestureChange = (e: Event) => {
       e.preventDefault()
@@ -216,6 +252,9 @@ export function usePinchNav(
       else wheelTimer = setTimeout(end, 180)
     }
 
+    target.addEventListener('touchstart', onTouch, { passive: true })
+    target.addEventListener('touchend', onTouch, { passive: true })
+    target.addEventListener('touchcancel', onTouch, { passive: true })
     target.addEventListener('gesturestart', onGestureStart)
     target.addEventListener('gesturechange', onGestureChange)
     target.addEventListener('gestureend', onGestureEnd)
@@ -226,6 +265,9 @@ export function usePinchNav(
     target.addEventListener('wheel', onWheel, { passive: false })
     return () => {
       if (wheelTimer) clearTimeout(wheelTimer)
+      target.removeEventListener('touchstart', onTouch)
+      target.removeEventListener('touchend', onTouch)
+      target.removeEventListener('touchcancel', onTouch)
       target.removeEventListener('gesturestart', onGestureStart)
       target.removeEventListener('gesturechange', onGestureChange)
       target.removeEventListener('gestureend', onGestureEnd)

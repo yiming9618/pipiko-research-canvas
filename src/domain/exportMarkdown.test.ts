@@ -192,6 +192,26 @@ describe('导出给 AI', () => {
     expect(md).toContain('type: paper')
   })
 
+  it('手动写的卡片：单张、整块画板里都会导出，和导入的一视同仁', () => {
+    const manual = (id: string, kind: Card['kind'], body: string, order: number): Card => ({
+      id, record_id: '', date: '2026-11-10', kind, heading: kind, body_md: body, order, updated_at: T,
+    })
+    const cards = [card('c1', 'r1', '2026-11-10', '发现', '导入的发现'), manual('m1', '问题', '手写的问题', 1), manual('m2', '下一步', '手写的下一步', 2)]
+    const whole = buildExport(base({ items: [item('i1', 'day', '2026-11-10')], records: [record('r1', '2026-11-10')], cards }))
+    expect(whole).toContain('导入的发现')
+    expect(whole).toContain('### 我在画板上写的卡片')
+    expect(whole).toContain('【问题】\n手写的问题')
+    expect(whole).toContain('【下一步】\n手写的下一步')
+
+    const onlyManualDay = buildExport(base({ items: [item('i1', 'day', '2026-11-10')], cards: [manual('m1', '思考', '空白日子上写的', 1)] }))
+    expect(onlyManualDay).toContain('【思考】\n空白日子上写的')
+    expect(onlyManualDay).not.toContain('这一天没有研究卡片')
+
+    const single = buildExport(base({ items: [item('i1', 'card', 'm1')], cards }))
+    expect(single).toContain('### 2026-11-10 · 我在画板上写的')
+    expect(single).toContain('【问题】\n手写的问题')
+  })
+
   it('同样的内容导出两次，文字完全一样', () => {
     const data = base({ items: [item('i1', 'paper', 'a')], papers: [paper('a')] })
     expect(buildExport(data)).toBe(buildExport(data))

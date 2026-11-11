@@ -22,10 +22,29 @@ export function BoardPage({ param, pileId }: { param?: string; pileId?: string }
           ? 'month'
           : 'day'
 
+  // Every day that has something: imported records, papers read, hand-written cards,
+  // or anything put on that day's board (text, pictures, ink, lines).
   const days = useLiveQuery(async () => {
-    const records = await db.records.filter((r) => !r.deleted).toArray()
-    const reads = await db.imports.filter((e) => e.kind === 'paper' && !e.undone && !e.deleted).toArray()
-    return [...new Set([...records.map((r) => r.date), ...reads.map((e) => e.date)])].sort()
+    const onBoard = (rows: { board_id: string; deleted?: boolean }[]) =>
+      rows.filter((r) => !r.deleted && r.board_id.startsWith('day:')).map((r) => r.board_id.slice(4))
+    const [records, cards, reads, items, links, ink] = await Promise.all([
+      db.records.filter((r) => !r.deleted).toArray(),
+      db.cards.filter((c) => !c.deleted).toArray(),
+      db.imports.filter((e) => e.kind === 'paper' && !e.undone && !e.deleted).toArray(),
+      db.boardItems.toArray(),
+      db.connectors.toArray(),
+      db.strokes.toArray(),
+    ])
+    return [
+      ...new Set([
+        ...records.map((r) => r.date),
+        ...cards.map((c) => c.date),
+        ...reads.map((e) => e.date),
+        ...onBoard(items),
+        ...onBoard(links),
+        ...onBoard(ink),
+      ]),
+    ].sort()
   })
 
   // "#/board" opens the most recent month that has something (this month if there is nothing yet).

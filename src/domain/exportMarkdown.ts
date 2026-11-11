@@ -207,7 +207,7 @@ export function buildExport(data: ExportData): string {
     const loose = inside.filter((x) => x.ref_type === 'card').map((x) => cardById.get(x.ref_id)).filter((c): c is Card => !!c)
     for (const c of loose) {
       const r = recordById.get(c.record_id)
-      out.push(`${c.date} · ${r?.title ?? ''}`, ...cardLines(c))
+      out.push(`${c.date} · ${r ? r.title : '我在画板上写的'}`, ...cardLines(c))
     }
     const inPile = inside.filter((x) => x.ref_type === 'paper').map((x) => paperById.get(x.ref_id)).filter((p): p is Paper => !!p)
     if (inPile.length > 0) {
@@ -249,7 +249,7 @@ export function buildExport(data: ExportData): string {
     for (const c of boxCards) byRecord.set(c.record_id, [...(byRecord.get(c.record_id) ?? []), c])
     for (const [recordId, list] of byRecord) {
       const r = recordById.get(recordId)
-      body.push(`### ${list[0].date} · ${r?.title || '（没有标题）'}`, '')
+      body.push(`### ${list[0].date} · ${r ? r.title || '（没有标题）' : '我在画板上写的'}`, '')
       for (const c of list) body.push(...cardLines(c))
     }
     // lines drawn between two of the chosen cards
@@ -270,8 +270,13 @@ export function buildExport(data: ExportData): string {
   for (const date of boxDays) {
     const dayRecords = recordsOfDay(date)
     body.push(`## 画板：${date}`, '')
-    if (dayRecords.length === 0) body.push('（这一天没有研究记录）', '')
+    const byHand = cards.filter((c) => c.date === date && !recordById.has(c.record_id)).sort((a, b) => a.order - b.order)
+    if (dayRecords.length === 0 && byHand.length === 0) body.push('（这一天没有研究卡片）', '')
     for (const r of dayRecords) body.push(...recordLines(r, '###'))
+    if (byHand.length > 0) {
+      body.push('### 我在画板上写的卡片', '')
+      for (const c of byHand) body.push(...cardLines(c))
+    }
     const links = connectorLines(`day:${date}`)
     if (links.length > 0) body.push('连线：', ...links, '')
     const extras = extrasOf(`day:${date}`, date)

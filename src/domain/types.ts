@@ -133,6 +133,7 @@ export const CARD_KINDS = ['发现', '实验', '问题', '思考', '下一步'] 
 export type CardKind = (typeof CARD_KINDS)[number] | '其他'
 
 export interface Card extends Synced {
+  /** The record it came in with. Empty for a card written by hand on the board. */
   record_id: string
   date: ISODate
   kind: CardKind
@@ -140,8 +141,12 @@ export interface Card extends Synced {
   heading: string
   body_md: string
   order: number
-  import_id: string
+  /** Absent for a card written by hand. */
+  import_id?: string
 }
+
+/** A card the person wrote on the board, as opposed to one that came from pasted Markdown. */
+export const isManualCard = (c: Pick<Card, 'import_id'>) => !c.import_id
 
 /** Board ids: `day:2026-11-10` or `pile:<pile id>`. */
 export type BoardRefType = 'cover' | 'card' | 'paper' | 'pile' | 'image' | 'text'

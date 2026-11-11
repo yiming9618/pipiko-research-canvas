@@ -6,12 +6,15 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { candidatesFor, linkCitations } from '../../domain/citations'
 import { shortDate } from '../../domain/importer'
-import { cardKey, coverKey, defaultLayout } from '../../domain/layout'
+import { CARD_W, cardKey, coverKey, defaultLayout } from '../../domain/layout'
 import { REF_TYPES, countContents, pileBoardId } from '../../domain/piles'
-import type { Asset, BoardItem, BoardRefType, Card, Paper, Pile, ResearchRecord } from '../../domain/types'
+import { isManualCard, type Asset, type BoardItem, type BoardRefType, type Card, type Paper, type Pile, type ResearchRecord } from '../../domain/types'
 import {
   addConnector,
   addImageItem,
+  addManualCard,
+  deleteManualCard,
+  saveManualCard,
   addStroke,
   addTextItem,
   patchConnector,
@@ -31,6 +34,7 @@ import { Crumb } from '../time/Crumb'
 import { KIND_COLOR } from '../time/MonthView'
 import { useStageAnimation } from '../time/zoom'
 import { Canvas, DEFAULT_INK_SIZE, type CanvasApi, type CanvasNode, type Selection, type Tool } from './Canvas'
+import { CardDialog } from './CardDialog'
 import { CitePopover, Cover, RawDialog, TextBox, ToolButton, useNarrow } from './parts'
 
 const INK = '#b4455c'
@@ -108,6 +112,9 @@ export function BoardView(props: Props) {
   const [dropping, setDropping] = useState(false)
   /** Cards being chosen for a discussion box (days only). null = not choosing. */
   const [picked, setPicked] = useState<string[] | null>(null)
+  /** The card dialog: writing a new card, or changing a hand-written one. */
+  const [cardDialog, setCardDialog] = useState<{ card?: Card } | null>(null)
+  const downAt = useRef<{ x: number; y: number } | null>(null)
   const press = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null)
   const swallowClick = useRef(false)
   const api = useRef<CanvasApi>(null)
@@ -146,6 +153,12 @@ export function BoardView(props: Props) {
     return map
   }, [cards])
 
+  /** Cards written by hand on this day: they belong to no record. */
+  const manualCards = useMemo(
+    () => (isDay ? (cards ?? []).filter(isManualCard).sort((a, b) => a.order - b.order || (a.id < b.id ? -1 : 1)) : []),
+    [isDay, cards],
+  )
+
   /** Rows for things that are references (not images or free text), by "type:id". */
   const itemByRef = useMemo(() => {
     const map = new Map<string, BoardItem>()
@@ -167,8 +180,9 @@ export function BoardView(props: Props) {
         return 130
       },
       columns,
+      manualCards.map((c) => c.id),
     )
-  }, [isDay, sortedRecords, cardsOf, heights, cardById, columns])
+  }, [isDay, sortedRecords, cardsOf, heights, cardById, columns, manualCards])
 
   const saveText = useCallback(
     async (key: string, text: string) => {
@@ -181,6 +195,12 @@ export function BoardView(props: Props) {
         return
       }
       const card = cardById.get(key.slice(5))
+      if (card && isManualCard(card)) {
+        // no imported original to preserve: the card itself changes
+        if (text.trim() === '') await deleteManualCard(card)
+        else if (text.trim() !== card.body_md.trim()) await saveManualCard(card, { text })
+        return
+      }
       const at = layout.get(key)
       if (!card || !at) return
       const existing = itemByRef.get(key)
@@ -270,6 +290,11 @@ export function BoardView(props: Props) {
           const at = item ?? layout.get(cardKey(card.id))
           if (at) out.push(cardNode(card, at, item))
         }
+      }
+      for (const card of manualCards) {
+        const item = itemByRef.get(cardKey(card.id))
+        const at = item ?? layout.get(cardKey(card.id))
+        if (at) out.push(cardNode(card, at, item))
       }
     }
 
@@ -372,7 +397,7 @@ export function BoardView(props: Props) {
     }
     // Untouched cards keep their order; anything moved is drawn above them, most recent on top.
     return out.sort((a, b) => (a.z ?? 0) - (b.z ?? 0))
-  }, [isDay, sortedRecords, papers, itemByRef, layout, cardsOf, items, assets, typingKey, saveText, recordById, cardById, piles, pileItems, source])
+  }, [isDay, sortedRecords, papers, itemByRef, layout, cardsOf, manualCards, items, assets, typingKey, saveText, recordById, cardById, piles, pileItems, source])
 
   const topZ = (items ?? []).reduce((max, i) => Math.max(max, i.z), 0) + 1
 
@@ -445,6 +470,21 @@ export function BoardView(props: Props) {
             void removeItem(selectedItem.existing!)
             setSelection(null)
           }),
+        )
+      }
+      const manual = isDay && key.startsWith('card:') ? cardById.get(key.slice(5)) : undefined
+      if (manual && isManualCard(manual)) {
+        buttons.push(
+          quiet(
+            '删除',
+            () => {
+              if (window.confirm('删除这张卡片？它在堆和讨论框里也会一起消失。')) {
+                void deleteManualCard(manual)
+                setSelection(null)
+              }
+            },
+            true,
+          ),
         )
       }
       if (!isDay && !isOwn) buttons.push(quiet('移出这个堆', deleteSelection))
@@ -541,8 +581,30 @@ export function BoardView(props: Props) {
       }
     : {}
 
+  const saveCard = async (kind: Exclude<Card['kind'], '其他'>, text: string) => {
+    const editingCard = cardDialog?.card
+    setCardDialog(null)
+    if (editingCard) {
+      await saveManualCard(editingCard, { kind, text })
+      return
+    }
+    // On a wide screen the new card lands in the middle of what is in view, on top.
+    // On a phone it takes the next template spot, so an untouched day stays one column.
+    const c = !narrow ? api.current?.center() : undefined
+    await addManualCard(date, kind, text, c ? { x: c.x - CARD_W / 2, y: c.y - 60, w: CARD_W, z: topZ } : undefined)
+  }
+
   const onClick = (e: MouseEvent) => {
     const cite = (e.target as HTMLElement).closest<HTMLAnchorElement>('a.cite')
+    if (!cite && narrow && isDay && picked === null) {
+      // Phone: the board is not arranged here, but a hand-written card can still be opened to change it.
+      const d = downAt.current
+      const still = !d || Math.hypot(e.clientX - d.x, e.clientY - d.y) < 8
+      const key = still ? cardKeyAt(document.elementFromPoint(e.clientX, e.clientY)) : ''
+      const card = key ? cardById.get(key.slice(5)) : undefined
+      if (card && isManualCard(card)) setCardDialog({ card })
+      return
+    }
     if (!cite) return
     e.preventDefault()
     if (isEditing) return
@@ -608,6 +670,7 @@ export function BoardView(props: Props) {
     )
   }
 
+  const hasContent = sortedRecords.length > 0 || manualCards.length > 0
   let head: ReactNode
   if (isDay) {
     const { days } = props as { days: string[] }
@@ -625,7 +688,7 @@ export function BoardView(props: Props) {
           prev={prev ? { href: `#/board/${prev}`, label: shortDate(prev) } : undefined}
           next={next ? { href: `#/board/${next}`, label: shortDate(next) } : undefined}
         />
-        {loaded && sortedRecords.length > 0 && <span className="board-state">{edited ? '已编排' : '模板布局 · 未编辑'}</span>}
+        {loaded && hasContent && <span className="board-state">{edited ? '已编排' : '模板布局 · 未编辑'}</span>}
         <div className="board-keys">
           {keywords.map((k) => (
             <span key={k} className="key-tag">
@@ -633,7 +696,7 @@ export function BoardView(props: Props) {
             </span>
           ))}
         </div>
-        {loaded && sortedRecords.length > 0 && (
+        {loaded && hasContent && (
           <AddToDiscussion refs={[{ type: 'day', id: date }]} iconOnly label="把这一天的画板放进讨论框" />
         )}
       </>
@@ -649,6 +712,9 @@ export function BoardView(props: Props) {
     <div
       className={`dayboard${dropping ? ' is-dropping' : ''}${picked !== null ? ' is-picking' : ''}`}
       onClick={onClick}
+      onPointerDown={(e) => {
+        downAt.current = { x: e.clientX, y: e.clientY }
+      }}
       {...pickHandlers}
       ref={stage}
       onDragOver={onDragOver}
@@ -659,7 +725,7 @@ export function BoardView(props: Props) {
 
       {empty && (
         <p className="empty board-empty">
-          {isDay ? '这一天还没有记录。' : '这个堆还是空的。把论文从左边拖进来，或在画板、论文页里用"放进堆"。'}
+          {isDay ? '这一天还是空白的。点“加卡片”写下第一张，或者在主页导入这一天的记录。' : '这个堆还是空的。把论文从左边拖进来，或在画板、论文页里用"放进堆"。'}
         </p>
       )}
 
@@ -748,6 +814,7 @@ export function BoardView(props: Props) {
               icon={<IconPen />}
             />
             <span className="toolbar-gap" aria-hidden="true" />
+            {isDay && <ToolButton label="卡片" onClick={() => setCardDialog({})} icon={<IconPlus />} />}
             <ToolButton label="文字" onClick={() => void addText()} icon={<IconText />} />
             <ToolButton label="贴图" onClick={() => fileRef.current?.click()} icon={<IconImage />} />
             <span className="toolbar-gap" aria-hidden="true" />
@@ -775,6 +842,12 @@ export function BoardView(props: Props) {
           loaded &&
           picked === null && (
             <div className="edit-toggle view-tools">
+              {isDay && (
+                <button type="button" className="btn" onClick={() => setCardDialog({})}>
+                  <IconPlus />
+                  加卡片
+                </button>
+              )}
               {canPick && (cards?.length ?? 0) > 0 && (
                 <button type="button" className="btn" onClick={() => setPicked([])}>
                   选卡片
@@ -787,6 +860,29 @@ export function BoardView(props: Props) {
             </div>
           )
         ))}
+
+      {!canEdit && isDay && loaded && (
+        <button type="button" className="btn edit-toggle" onClick={() => setCardDialog({})}>
+          <IconPlus />
+          加卡片
+        </button>
+      )}
+
+      {cardDialog && (
+        <CardDialog
+          card={cardDialog.card}
+          onSave={(kind, text) => void saveCard(kind, text)}
+          onDelete={
+            cardDialog.card
+              ? () => {
+                  void deleteManualCard(cardDialog.card!)
+                  setCardDialog(null)
+                }
+              : undefined
+          }
+          onClose={() => setCardDialog(null)}
+        />
+      )}
 
       {picked !== null && (
         <div className="pick-bar" role="group" aria-label="选卡片放进讨论框">

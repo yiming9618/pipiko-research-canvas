@@ -2,6 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useMemo, useRef } from 'react'
 import { KIND_COLOR } from '../../domain/colors'
 import type { Card, ResearchRecord } from '../../domain/types'
+import { datesOfMonth, neighbours, shownMonths } from '../../domain/timeline'
 import { db, todayLocal } from '../../store/db'
 import { PileShelf } from '../piles/PileShelf'
 import { Crumb } from './Crumb'
@@ -76,12 +77,14 @@ export function MonthView({ ym, days }: { ym: string; days: string[] }) {
     },
   }, area)
 
-  const months = [...new Set(days.map((d) => d.slice(0, 7)))]
-  const prev = [...months].reverse().find((m) => m < ym)
-  const next = months.find((m) => m > ym)
-  const label = (m: string) => `${m.slice(0, 4)} 年 ${Number(m.slice(5))} 月`
   const today = todayLocal()
-  const count = byDate.size
+  const { prev, next } = neighbours(shownMonths(days, today), ym)
+  const label = (m: string) => `${m.slice(0, 4)} 年 ${Number(m.slice(5))} 月`
+  // A day counts when it has records, cards or papers read, or anything on its board.
+  const withContent = new Set([...byDate.keys(), ...days.filter((d) => d.startsWith(ym))])
+  const count = withContent.size
+  const thisMonth = ym === today.slice(0, 7)
+  const allDates = datesOfMonth(ym)
 
   return (
     <div className="timeview" ref={area}>
@@ -92,26 +95,44 @@ export function MonthView({ ym, days }: { ym: string; days: string[] }) {
           prev={prev ? { href: `#/board/${prev}`, label: label(prev) } : undefined}
           next={next ? { href: `#/board/${next}`, label: label(next) } : undefined}
         />
-        {ready && <span className="board-state">{count > 0 ? `${count} 天有记录` : '这个月还没有记录'}</span>}
-        <span className="zoom-hint">双指放大进入某一天，缩小回到全年</span>
+        {ready && <span className="board-state">{count > 0 ? `${count} 天有内容` : '这个月还是空的'}</span>}
+        <span className="zoom-hint">点任何一天进入，双指缩小回到全年</span>
       </header>
 
       <div className="stage" ref={stage} style={{ visibility: ready ? 'visible' : 'hidden' }}>
         {PERIODS.map((p) => {
-          const inPeriod = [...byDate.values()]
-            .filter((d) => {
-              const n = Number(d.date.slice(8))
-              return n >= p.from && n <= p.to
-            })
-            .sort((a, b) => (a.date < b.date ? -1 : 1))
+          const dates = allDates.filter((d) => {
+            const n = Number(d.slice(8))
+            return n >= p.from && n <= p.to
+          })
+          const full = dates.filter((d) => withContent.has(d))
+          const blank = dates.filter((d) => !withContent.has(d))
           return (
             <section key={p.label} className="period" aria-label={p.label}>
               <h2 className="period-label">{p.label}</h2>
-              <div className="day-grid">
-                {inPeriod.length === 0 && <div className="day-empty" aria-hidden="true" />}
-                {inPeriod.map((d) => (
-                  <DayTile key={d.date} day={d} today={d.date === today} />
-                ))}
+              <div className="period-body">
+                {full.length > 0 && (
+                  <div className="day-grid">
+                    {full.map((d) => (
+                      <DayTile key={d} day={byDate.get(d) ?? { date: d, records: [], cards: [], reads: [] }} today={d === today} />
+                    ))}
+                  </div>
+                )}
+                {/* Days with nothing yet: small, but each one opens a blank board. Fainter outside the current month. */}
+                <div className={`blank-days${thisMonth ? '' : ' is-faint'}`}>
+                  {blank.map((d) => (
+                    <a
+                      key={d}
+                      className={`blank-day${d === today ? ' is-today' : ''}`}
+                      href={`#/board/${d}`}
+                      data-zoom={d}
+                      aria-label={`${Number(d.slice(5, 7))} 月 ${Number(d.slice(8))} 日，空白${d === today ? '，今天' : ''}`}
+                      onClick={(e) => rememberOrigin(e.currentTarget)}
+                    >
+                      {Number(d.slice(8))}
+                    </a>
+                  ))}
+                </div>
               </div>
             </section>
           )
@@ -138,6 +159,7 @@ function DayTile({ day, today }: { day: Day; today: boolean }) {
       <b>{label}</b>
       {title && <span className="tile-title">{title}</span>}
       {day.reads.length > 0 && <span className="tile-title">读了 {day.reads.join('、')}</span>}
+      {!first && day.reads.length === 0 && day.cards.length === 0 && <span className="tile-title">画板上有内容</span>}
       {day.cards.length > 0 && (
         <span className="thumb" role="img" aria-label={`${day.cards.length} 张卡片`}>
           {day.cards.slice(0, 9).map((c) => (

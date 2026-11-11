@@ -35,11 +35,23 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   })
-  const smallTargets = (scope) =>
+  // measured only after every entrance animation has finished
+  const smallTargets = async (scope) => {
+    await page.evaluate(() =>
+      Promise.all(
+        document
+          .getAnimations()
+          .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+          .map((a) => a.finished.catch(() => undefined)),
+      ).then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))),
+    )
+    return measure(scope)
+  }
+  const measure = (scope) =>
     page.evaluate((sel) =>
       [...document.querySelectorAll(`${sel} a, ${sel} button, ${sel} input, ${sel} summary`)]
         .map((el) => ({ t: (el.textContent || el.getAttribute('aria-label') || el.tagName).trim().slice(0, 12), r: el.getBoundingClientRect() }))
-        .filter((x) => x.r.width > 0 && (x.r.height < 43.5 || x.r.width < 43.5))
+        .filter((x) => x.r.width > 0 && (x.r.height < 44 || x.r.width < 44))
         .map((x) => `${x.t} ${Math.round(x.r.width)}×${Math.round(x.r.height)}`), scope)
   const toastSays = (text) => page.locator('.toast', { hasText: text }).waitFor()
 
@@ -183,7 +195,6 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   check(`${tag} 导出里有堆`, md.includes('## 堆：共在'))
   check(`${tag} 卡片里引用到的论文附在后面`, md.includes('## 上面提到的论文') && md.includes('示例论文标题'))
   check(`${tag} 末尾附两套模板`, md.includes('## 研究记录的模板') && md.includes('## 论文的模板'))
-  await page.waitForTimeout(500) // let the result's entrance animation finish before measuring
   check(`${tag} 详情：可点元素 ≥ 44px`, (await smallTargets('.page')).length === 0, (await smallTargets('.page')).join(', '))
   check(`${tag} 没有横向滚动`, await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
   await page.screenshot({ path: `${out}/${size.name}-disc-4-box.png`, fullPage: true })

@@ -3100,3 +3100,146 @@ select,
   appearance: none;
   min-width: 0;
 }
+
+/* ── writing a card by hand ──────────────────────────── */
+
+.card-dialog {
+  width: min(520px, calc(100vw - 24px));
+}
+
+.kind-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.kind-row .chip[aria-pressed='true'] {
+  background: var(--c-bg, var(--accent-wash));
+  border-color: var(--c-dot, var(--accent));
+  color: var(--c-ink, var(--text));
+}
+
+.card-dialog-text {
+  width: 100%;
+  min-height: 132px;
+  resize: vertical;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-warm);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.card-dialog-delete {
+  margin-right: auto;
+  margin-left: 0;
+}
+
+/* ── month view: every day can be opened ─────────────── */
+
+.period-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.blank-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.blank-day {
+  width: var(--tap);
+  height: var(--tap);
+  border: 1px dashed #e3c9ce;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-soft);
+  text-decoration: none;
+  transition:
+    border-color var(--fast) ease,
+    background var(--fast) ease;
+}
+
+.blank-day:hover {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.blank-day:active {
+  transform: scale(0.95);
+}
+
+/* other months: quieter, still readable (the text keeps its contrast) and still tappable */
+.blank-days.is-faint .blank-day {
+  border-color: transparent;
+  background: rgba(43, 34, 36, 0.035);
+}
+
+.blank-day.is-today {
+  border: 2px solid var(--accent);
+  color: var(--text);
+  font-weight: 700;
+}
+
+.month-tile.is-today {
+  border: 2px solid var(--accent);
+  padding: 11px;
+}
+
+/* ── home: the paste panel, about half its former height ─ */
+
+.panel {
+  width: min(600px, 100%);
+  padding: clamp(14px, 3vw, 20px) clamp(16px, 4vw, 26px);
+  gap: 10px;
+}
+
+.panel .md-input {
+  display: block;
+  height: 96px;
+  padding: 10px 14px;
+  line-height: 1.6;
+}
+
+/* nothing to show yet: take no room (and no gap) */
+.panel .result-area:empty {
+  display: none;
+}
+
+.panel-foot {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+/* wide screens: the title and the 研究记录 / 论文 switch share one line */
+@media (min-width: 560px) {
+  .panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .panel > * {
+    grid-column: 1 / -1;
+  }
+
+  .panel > .panel-head {
+    grid-column: 1;
+  }
+
+  .panel > .seg {
+    grid-column: 2;
+  }
+}
