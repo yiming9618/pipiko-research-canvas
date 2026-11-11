@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } fr
 import { candidatesFor, linkCitations } from '../../domain/citations'
 import { shortDate } from '../../domain/importer'
 import { cardKey, coverKey, defaultLayout } from '../../domain/layout'
-import type { Asset, BoardItem, BoardRefType, Card, CardKind, Paper, ResearchRecord } from '../../domain/types'
+import type { Asset, BoardItem, BoardRefType, Card, Paper, ResearchRecord } from '../../domain/types'
 import {
   addConnector,
   addImageItem,
@@ -14,22 +14,18 @@ import {
   removeItem,
   removeStroke,
 } from '../../store/boardActions'
-import { db } from '../../store/db'
-import { IconBack, IconCheck, IconForward, IconHand, IconImage, IconLink, IconPen, IconText } from '../../ui/icons'
+import { db, todayLocal } from '../../store/db'
+import { IconCheck, IconForward, IconHand, IconImage, IconLink, IconPen, IconText } from '../../ui/icons'
 import { fileToImage } from '../../ui/image'
 import { Markdown } from '../../ui/Markdown'
 import { TopNav } from '../../ui/TopNav'
 import { LibraryList } from '../library/LibraryList'
+import { Crumb } from '../time/Crumb'
+import { KIND_COLOR, MonthView } from '../time/MonthView'
+import { YearView } from '../time/YearView'
+import { useStageAnimation } from '../time/zoom'
 import { Canvas, DEFAULT_INK_SIZE, type CanvasApi, type CanvasNode, type Selection, type Tool } from './Canvas'
 
-const KIND_COLOR: Record<CardKind, string> = {
-  发现: 'blue',
-  实验: 'green',
-  问题: 'pink',
-  思考: 'yellow',
-  下一步: 'orange',
-  其他: 'default',
-}
 const INK = '#b4455c'
 
 function useNarrow(): boolean {
@@ -49,18 +45,21 @@ function estimate(text: string): number {
   return 70 + Math.ceil(text.length / 20) * 26
 }
 
-export function BoardPage({ date }: { date?: string }) {
+/** `param` is a year (2026), a month (2026-11) or a day (2026-11-10). */
+export function BoardPage({ param }: { param?: string }) {
+  const level = !param ? null : /^\d{4}$/.test(param) ? 'year' : /^\d{4}-\d{2}$/.test(param) ? 'month' : 'day'
   const days = useLiveQuery(async () => {
     const records = await db.records.filter((r) => !r.deleted).toArray()
     const reads = await db.imports.filter((e) => e.kind === 'paper' && !e.undone && !e.deleted).toArray()
     return [...new Set([...records.map((r) => r.date), ...reads.map((e) => e.date)])].sort()
   })
 
-  // "#/board" with no date opens the most recent day that has something.
+  // "#/board" opens the most recent month that has something (this month if there is nothing yet).
   useEffect(() => {
-    if (date || !days || days.length === 0) return
-    window.location.replace(`#/board/${days[days.length - 1]}`)
-  }, [date, days])
+    if (param || !days) return
+    const latest = days.length > 0 ? days[days.length - 1] : todayLocal()
+    window.location.replace(`#/board/${latest.slice(0, 7)}`)
+  }, [param, days])
 
   return (
     <div className="boardpage">
@@ -70,14 +69,9 @@ export function BoardPage({ date }: { date?: string }) {
           <LibraryList />
         </aside>
         <main className="board-main">
-          {date ? (
-            <DayBoard key={date} date={date} days={days ?? []} />
-          ) : (
-            days &&
-            days.length === 0 && (
-              <p className="empty board-empty">还没有研究记录。在主页粘贴一份，它会出现在那一天的画板上。</p>
-            )
-          )}
+          {level === 'year' && <YearView key={param} year={param!} days={days ?? []} />}
+          {level === 'month' && <MonthView key={param} ym={param!} days={days ?? []} />}
+          {level === 'day' && <DayBoard key={param} date={param!} days={days ?? []} />}
         </main>
       </div>
     </div>
@@ -129,6 +123,7 @@ function DayBoard({ date, days }: { date: string; days: string[] }) {
   const [notice, setNotice] = useState('')
   const api = useRef<CanvasApi>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const stage = useRef<HTMLDivElement>(null)
 
   const canEdit = !narrow
   const isEditing = editing && canEdit
@@ -451,34 +446,18 @@ function DayBoard({ date, days }: { date: string; days: string[] }) {
 
   const popPaper = popover ? papers?.find((p) => p.id === popover.paperId) : undefined
   const loaded = records !== undefined && cards !== undefined && items !== undefined
+  useStageAnimation(stage, 2, date, loaded)
 
   return (
-    <div className="dayboard" onClick={onClick}>
+    <div className="dayboard" onClick={onClick} ref={stage}>
       <header className="board-head">
-        <div className="crumb">
-          <span className="crumb-path">
-            {year} › {Number(month)} 月 ›
-          </span>
-          <h1>{shortDate(date)}</h1>
-        </div>
-        <div className="crumb-nav">
-          <a
-            className="icon-btn"
-            href={prev ? `#/board/${prev}` : undefined}
-            aria-label={prev ? `前一天有记录的日子：${shortDate(prev)}` : '前面没有了'}
-            aria-disabled={!prev}
-          >
-            <IconBack />
-          </a>
-          <a
-            className="icon-btn"
-            href={next ? `#/board/${next}` : undefined}
-            aria-label={next ? `后一天有记录的日子：${shortDate(next)}` : '后面没有了'}
-            aria-disabled={!next}
-          >
-            <IconForward />
-          </a>
-        </div>
+        <Crumb
+          year={year}
+          month={month}
+          date={date}
+          prev={prev ? { href: `#/board/${prev}`, label: shortDate(prev) } : undefined}
+          next={next ? { href: `#/board/${next}`, label: shortDate(next) } : undefined}
+        />
         {loaded && sortedRecords.length > 0 && <span className="board-state">{edited ? '已编排' : '模板布局 · 未编辑'}</span>}
         <div className="board-keys">
           {keywords.map((k) => (
@@ -512,6 +491,9 @@ function DayBoard({ date, days }: { date: string; days: string[] }) {
         topInset={72}
         inkColor={INK}
         apiRef={api}
+        onZoomOut={() => {
+          window.location.hash = `#/board/${year}-${month}`
+        }}
       />
 
       {markers.length > 0 && (

@@ -3,6 +3,7 @@
 // links); connectors and ink are SVG layers below and above them.
 
 import { getStroke } from 'perfect-freehand'
+import { lockZoomWheel, zoomWheelLocked } from '../time/zoom'
 import {
   useCallback,
   useEffect,
@@ -71,6 +72,8 @@ interface Props {
   /** Space kept clear at the top for the header. */
   topInset?: number
   inkColor: string
+  /** Called when the user keeps pinching in after the board is already at its smallest. */
+  onZoomOut?: () => void
   /** Lets the parent turn a screen point into a board position (for placing new items). */
   apiRef?: React.RefObject<CanvasApi | null>
 }
@@ -87,7 +90,7 @@ const INK_SIZE = 5
 
 type Gesture =
   | { type: 'pan'; sx: number; sy: number; view: View }
-  | { type: 'pinch'; dist: number; mx: number; my: number; view: View }
+  | { type: 'pinch'; dist: number; mx: number; my: number; view: View; wantOut: boolean }
   | { type: 'drag'; key: string; sx: number; sy: number; x: number; y: number; moved: boolean }
   | { type: 'resize'; key: string; sx: number; w: number }
   | { type: 'link'; from: string }
@@ -151,6 +154,11 @@ export function Canvas(props: Props) {
 
   const pointers = useRef(new Map<number, { x: number; y: number }>())
   const gesture = useRef<Gesture | null>(null)
+  const fitK = useRef(1)
+  const zoomOut = useRef(props.onZoomOut)
+  zoomOut.current = props.onZoomOut
+  /** Smallest zoom. With a level above this board, half the fitted size is the floor; past it we leave. */
+  const floorK = useCallback(() => (zoomOut.current ? Math.max(MIN_K, fitK.current * 0.5) : MIN_K), [])
   const penSeen = useRef(false)
   const [live, setLive] = useState<Live>(null)
   /** Shown from the moment a drag ends until the saved value comes back, so nothing snaps back. */
@@ -214,6 +222,7 @@ export function Canvas(props: Props) {
     const width = maxX - minX
     const margin = el.clientWidth < 600 ? 16 : 40
     const k = Math.max(MIN_K, Math.min(1, (el.clientWidth - margin * 2) / width))
+    fitK.current = k
     setView({ x: (el.clientWidth - width * k) / 2 - minX * k, y: topInset + 8 - minY * k, k })
   }, [nodes, props.fitKey, setView, topInset])
 
@@ -236,13 +245,15 @@ export function Canvas(props: Props) {
   const toWorld = (p: { x: number; y: number }, v = viewRef.current) => ({ x: (p.x - v.x) / v.k, y: (p.y - v.y) / v.k })
 
   const zoomAt = useCallback(
-    (p: { x: number; y: number }, factor: number, from: View = viewRef.current) => {
-      const k = Math.max(MIN_K, Math.min(MAX_K, from.k * factor))
+    (p: { x: number; y: number }, factor: number, from: View = viewRef.current): number => {
+      const raw = from.k * factor
+      const k = Math.max(floorK(), Math.min(MAX_K, raw))
       const wx = (p.x - from.x) / from.k
       const wy = (p.y - from.y) / from.k
       setView({ x: p.x - wx * k, y: p.y - wy * k, k })
+      return raw
     },
-    [setView],
+    [setView, floorK],
   )
 
   // ── wheel and trackpad ───────────────────────────────────────────────
@@ -253,9 +264,25 @@ export function Canvas(props: Props) {
       if ((e.target as HTMLElement).closest('textarea')) return
       e.preventDefault()
       const v = viewRef.current
-      if (e.ctrlKey || e.metaKey) zoomAt(local(e), Math.exp(-e.deltaY * 0.01))
-      else setView({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY })
+      if (e.ctrlKey || e.metaKey) {
+        if (zoomWheelLocked()) return
+        const factor = Math.exp(-e.deltaY * 0.01)
+        const raw = zoomAt(local(e), factor)
+        // Already at the smallest size and still pinching in: build up, then leave.
+        if (raw < floorK() && factor < 1) {
+          pressure *= factor
+          if (pressure < 0.6 && zoomOut.current) {
+            pressure = 1
+            lockZoomWheel()
+            zoomOut.current()
+          }
+        } else {
+          pressure = 1
+        }
+      } else setView({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY })
     }
+    let pressure = 1
+    let gestureRaw = 1
     // Safari on Mac reports trackpad pinches as gesture events, not ctrl+wheel.
     let start: View | null = null
     const onGestureStart = (e: Event) => {
@@ -267,10 +294,12 @@ export function Canvas(props: Props) {
       if (!start || pointers.current.size > 0) return
       e.preventDefault()
       const g = e as Event & { scale: number; clientX: number; clientY: number }
-      zoomAt(local(g), g.scale, start)
+      gestureRaw = zoomAt(local(g), g.scale, start)
     }
     const onGestureEnd = () => {
+      if (start && gestureRaw < floorK() * 0.8) zoomOut.current?.()
       start = null
+      gestureRaw = 1
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     el.addEventListener('gesturestart', onGestureStart)
@@ -282,7 +311,7 @@ export function Canvas(props: Props) {
       el.removeEventListener('gesturechange', onGestureChange)
       el.removeEventListener('gestureend', onGestureEnd)
     }
-  }, [setView, zoomAt])
+  }, [setView, zoomAt, floorK])
 
   // ── pointers ─────────────────────────────────────────────────────────
   const startPinch = () => {
@@ -293,6 +322,7 @@ export function Canvas(props: Props) {
       mx: (a.x + b.x) / 2,
       my: (a.y + b.y) / 2,
       view: viewRef.current,
+      wantOut: false,
     }
     setLive(null)
   }
@@ -364,7 +394,9 @@ export function Canvas(props: Props) {
         const [a, b] = [...pointers.current.values()]
         if (!b) return
         const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
-        const nk = Math.max(MIN_K, Math.min(MAX_K, (g.view.k * Math.hypot(a.x - b.x, a.y - b.y)) / g.dist))
+        const raw = (g.view.k * Math.hypot(a.x - b.x, a.y - b.y)) / g.dist
+        const nk = Math.max(floorK(), Math.min(MAX_K, raw))
+        g.wantOut = raw < floorK() * 0.8
         const wx = (g.mx - g.view.x) / g.view.k
         const wy = (g.my - g.view.y) / g.view.k
         setView({ x: mid.x - wx * nk, y: mid.y - wy * nk, k: nk })
@@ -407,6 +439,12 @@ export function Canvas(props: Props) {
     if (!g) return
 
     if (g.type === 'pinch') {
+      if (g.wantOut && zoomOut.current) {
+        gesture.current = null
+        pointers.current.clear()
+        zoomOut.current()
+        return
+      }
       // One finger lifted: carry on as a pan with the finger that is left.
       const rest = [...pointers.current.values()][0]
       gesture.current = rest ? { type: 'pan', sx: rest.x, sy: rest.y, view: viewRef.current } : null

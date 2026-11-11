@@ -22,7 +22,7 @@ export default function App() {
 
   if (route === '/settings') return <Settings />
   if (route === '/board') return <BoardPage />
-  if (route.startsWith('/board/')) return <BoardPage date={route.slice(7)} />
+  if (route.startsWith('/board/')) return <BoardPage param={route.slice(7)} />
   if (route === '/library') return <Library />
   if (route.startsWith('/paper/')) return <Library paperId={decodeURIComponent(route.slice(7))} />
   return <Home />

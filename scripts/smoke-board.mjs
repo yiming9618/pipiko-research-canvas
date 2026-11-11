@@ -89,7 +89,7 @@ const check = (label, ok, detail = '') => {
   if (!ok) failed = true
 }
 
-for (const size of sizes) {
+for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY === x.name)) {
   const ctx = await browser.newContext({
     viewport: { width: size.width, height: size.height },
     isMobile: size.isMobile,
@@ -110,12 +110,26 @@ for (const size of sizes) {
     await page.waitForFunction(() => document.querySelector('.md-input').value === '')
   }
 
-  // ── open the board: lands on the latest day
+  // ── open the board: lands on the latest month
   await page.getByRole('link', { name: '画板' }).click()
+  await page.getByRole('heading', { name: '11 月', level: 1 }).waitFor()
+  await page.locator('.day-tile').first().waitFor()
+  check(`${tag} 打开画板，落在最近有记录的月份`, (await page.locator('.day-tile').count()) === 2)
+  const tile = page.locator('.day-tile[data-zoom="2026-11-10"]')
+  check(`${tag} 日期块：日期 + 标题 + 卡片颜色缩影`, (await tile.locator('.thumb span').count()) === 6 && (await tile.getByText('笔记本结构定下来 等 2 份').isVisible()))
+  check(`${tag} 日期块上有"读了 [论文]"`, await tile.getByText('读了 Living Media Interfaces').isVisible())
+  const periods = await page.locator('.period').evaluateAll((els) => els.map((e) => `${e.querySelector('h2').textContent}:${e.querySelectorAll('.day-tile').length}`))
+  check(`${tag} 按上旬 / 中旬 / 下旬排`, periods.join(' ') === '上旬:2 中旬:0 下旬:0', periods.join(' '))
+  if (size.isMobile) {
+    const cols = await page.locator('.day-tile').evaluateAll((els) => new Set(els.map((e) => Math.round(e.getBoundingClientRect().left))).size)
+    check(`${tag} 手机上月视图是单列`, cols === 1)
+  }
+  await page.screenshot({ path: `${out}/${size.name}-time-1-month.png` })
+  await tile.click()
   await page.getByRole('heading', { name: '11/10', level: 1 }).waitFor()
   await page.locator('.node.card').first().waitFor()
-  await page.waitForTimeout(300)
-  check(`${tag} 打开画板，落在最近有记录的一天`, true)
+  await page.waitForTimeout(500)
+  check(`${tag} 点日期块进入那一天`, true)
 
   const box = (sel) => page.locator(sel).first().boundingBox()
   check(`${tag} 同一天两份：2 个封面、6 张卡片`, (await page.locator('.node.cover').count()) === 2 && (await page.locator('.node.card').count()) === 6)
@@ -153,7 +167,7 @@ for (const size of sizes) {
   await page.locator('.node.card').first().waitFor()
 
   // ── previous day
-  await page.getByRole('link', { name: /前一天有记录的日子：11\/4/ }).click()
+  await page.getByRole('link', { name: '往前：11/4' }).click()
   await page.getByRole('heading', { name: '11/4', level: 1 }).waitFor()
   await page.getByText('回到最初的共在。').waitFor()
   check(`${tag} 切到前一个有记录的日子`, true)
@@ -316,6 +330,78 @@ for (const size of sizes) {
     check(`${tag} "恢复原样"回到模板位置和原文`, Math.abs(c3.width - c0.width) < 3)
     await page.screenshot({ path: `${out}/${size.name}-board-4-final.png` })
   }
+
+  // ── year / month / day
+  const vpNow = page.viewportSize()
+  const pinch = async (cx, cy, from, to) => {
+    const client = await ctx.newCDPSession(page)
+    const pts = (d) => [{ x: cx - d, y: cy, id: 1 }, { x: cx + d, y: cy, id: 2 }]
+    await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts(from) })
+    for (let i = 1; i <= 4; i++) {
+      await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts(from + ((to - from) * i) / 4) })
+    }
+    await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  }
+  const zoom = async (cx, cy, direction) => {
+    if (size.isMobile) return pinch(cx, cy, direction === 'in' ? 30 : 90, direction === 'in' ? 90 : 20)
+    await page.mouse.move(cx, cy)
+    await page.keyboard.down('Control')
+    // deltas are halved on a 2x screen, so send a generous pinch
+    for (let i = 0; i < 12; i++) await page.mouse.wheel(0, direction === 'in' ? -12 : 30)
+    await page.keyboard.up('Control')
+  }
+  const centre = async (sel) => {
+    await page.locator(sel).scrollIntoViewIfNeeded()
+    await page.waitForTimeout(150)
+    const b = await page.locator(sel).boundingBox()
+    return [b.x + b.width / 2, b.y + b.height / 2]
+  }
+
+  await page.goto(`${url}#/board/2026-11-10`)
+  await page.locator('.node.card').first().waitFor()
+  await page.getByRole('link', { name: '11 月', exact: true }).click()
+  await page.getByRole('heading', { name: '11 月', level: 1 }).waitFor()
+  await page.getByRole('link', { name: '2026', exact: true }).click()
+  await page.getByRole('heading', { name: '2026', level: 1 }).waitFor()
+  check(`${tag} 面包屑：日 → 月 → 年`, true)
+  check(`${tag} 年视图 12 个月份块`, (await page.locator('.month-tile').count()) === 12)
+  const nov = page.locator('.month-tile[data-zoom="2026-11"]')
+  check(`${tag} 月份块显示最多 3 条标题`, (await nov.locator('.tile-title').count()) === 3 && (await nov.getByText('和老师讨论方向').isVisible()))
+  check(`${tag} 没有记录的月份淡化且不可点`, (await page.locator('.month-tile.is-empty').count()) === 11)
+  await page.waitForTimeout(400)
+  await page.screenshot({ path: `${out}/${size.name}-time-2-year.png` })
+
+  await zoom(...(await centre('.month-tile[data-zoom="2026-11"]')), 'in')
+  await page.getByRole('heading', { name: '11 月', level: 1 }).waitFor()
+  check(`${tag} 年视图${size.isMobile ? '双指放大' : '触控板放大'} → 进入那个月`, true)
+  await page.waitForTimeout(400)
+
+  await zoom(...(await centre('.day-tile[data-zoom="2026-11-10"]')), 'in')
+  await page.getByRole('heading', { name: '11/10', level: 1 }).waitFor()
+  await page.locator('.node.card').first().waitFor()
+  check(`${tag} 月视图放大 → 进入那一天`, true)
+  await page.waitForTimeout(500)
+
+  await zoom(vpNow.width - 120, vpNow.height / 2, 'out')
+  await page.getByRole('heading', { name: '11 月', level: 1 }).waitFor()
+  check(`${tag} 日视图缩到最小后继续捏 → 回到月`, true)
+  await page.waitForTimeout(400)
+
+  await zoom(vpNow.width - 120, vpNow.height / 2, 'out')
+  await page.getByRole('heading', { name: '2026', level: 1 }).waitFor()
+  check(`${tag} 月视图缩小 → 回到年`, true)
+
+  await page.goBack()
+  await page.getByRole('heading', { name: '11 月', level: 1 }).waitFor()
+  check(`${tag} 浏览器后退回到上一层`, true)
+
+  const smallNav = await page.evaluate(() =>
+    [...document.querySelectorAll('.board-head a, .day-tile, .month-tile:not(.is-empty)')]
+      .map((el) => ({ t: (el.textContent || el.getAttribute('aria-label') || '').trim().slice(0, 10), r: el.getBoundingClientRect() }))
+      .filter((x) => x.r.width > 0 && (x.r.height < 44 || x.r.width < 44))
+      .map((x) => `${x.t} ${Math.round(x.r.width)}×${Math.round(x.r.height)}`),
+  )
+  check(`${tag} 面包屑和日期块 ≥ 44px`, smallNav.length === 0, smallNav.join(', '))
 
   check(`${tag} 没有报错`, errors.length === 0, errors.join(' | '))
   await ctx.close()
