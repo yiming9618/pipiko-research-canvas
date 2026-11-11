@@ -178,7 +178,7 @@ for (const size of sizes) {
   check(`${tag} 基础默认折叠`, !(await page.locator('.basics').evaluate((el) => el.open)))
   check(`${tag} 重点区块 4 个（含未知类型）`, (await page.locator('section.block').count()) === 4)
   check(`${tag} 理解栏 2 条 AI 整理`, (await page.locator('.source[data-source=ai]').count()) === 2)
-  check(`${tag} 被引用于 11/10`, await page.getByText('被引用于：11/10 的画板').isVisible())
+  check(`${tag} 被引用于 11/10（可点）`, await page.locator('.cited a', { hasText: '11/10' }).isVisible())
   check(`${tag} 读过 2 次：11/1、12/3`, await page.getByText('读过 2 次：11/1、12/3').isVisible())
 
   // layout: rail beside on wide, below on phone
