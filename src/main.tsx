@@ -8,3 +8,6 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 )
+
+// Ask the browser not to clear this notebook's local data when storage runs low.
+void navigator.storage?.persist?.().catch(() => undefined)
