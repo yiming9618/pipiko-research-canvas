@@ -2814,3 +2814,7 @@ select,
   display: flex;
   gap: 4px;
 }
+
+.result-area {
+  scroll-margin-bottom: 24px;
+}

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { PAPER_PROMPT, RESEARCH_PROMPT } from '../../domain/templates'
 import type { ImportEntry, ImportKind } from '../../domain/types'
 import { confirmSameAsWant, runImport } from '../../store/actions'
@@ -25,6 +25,14 @@ export function PastePanel() {
   const { requestUndo, dialog } = useUndo(() =>
     setResult({ message: '已撤销这次导入', notices: [], plain: true }),
   )
+
+  // The result (and any question in it) appears below the button: bring it into view.
+  const resultRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!result) return
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    resultRef.current?.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' })
+  }, [result])
 
   const submit = async () => {
     if (busy || text.trim() === '') return
@@ -113,7 +121,7 @@ export function PastePanel() {
         </button>
       </div>
 
-      <div role="status" aria-live="polite">
+      <div role="status" aria-live="polite" ref={resultRef} className="result-area">
         {result && (
           <div className={`result${result.plain ? ' is-plain' : ''}`}>
             <div>
