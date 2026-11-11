@@ -2695,3 +2695,109 @@ select,
   flex: none;
   text-decoration: none;
 }
+
+/* ── adding and editing papers ───────────────────────── */
+
+.liblist-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.paper-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  animation: appear 180ms var(--ease-out) both;
+}
+
+.paper-form .seg {
+  align-self: flex-start;
+}
+
+.form-note {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-soft);
+}
+
+.form-remove {
+  margin-left: auto;
+  color: var(--danger);
+}
+
+.want-item {
+  padding: 10px 0 10px 12px;
+  align-items: flex-start;
+}
+
+.want-item.is-editing {
+  padding: 10px 0;
+  display: block;
+}
+
+.want-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.want-title,
+.want-item a.want-title {
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.want-meta {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-soft);
+}
+
+.want-meta a {
+  display: inline-block;
+  padding: 10px 4px;
+  margin: -10px 0;
+}
+
+.want-why {
+  margin: 2px 0 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+  padding-left: 10px;
+  border-left: 2px solid var(--accent-wash);
+}
+
+.want-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+.link-btn {
+  min-height: var(--tap);
+  padding: 0 6px;
+  border: none;
+  background: none;
+  color: var(--accent-deep);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.paper-edit-info {
+  align-self: flex-start;
+  margin-left: -12px;
+}

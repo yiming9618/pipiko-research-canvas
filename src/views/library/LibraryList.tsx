@@ -1,10 +1,12 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useState } from 'react'
 import type { HighlightType, Paper } from '../../domain/types'
 import { db } from '../../store/db'
-import { addWant, removeWant } from '../../store/paperActions'
+import { markRead, retryLookup } from '../../store/paperActions'
+import { shortDate } from '../../domain/importer'
+import { AddPaperForm, EditPaperForm } from './PaperForm'
 import { DRAG_TYPE } from '../../store/pileActions'
-import { IconChevron, IconClose, IconPlus } from '../../ui/icons'
+import { IconChevron, IconEdit, IconPlus } from '../../ui/icons'
 
 const UNCATEGORISED = '未分类'
 
@@ -36,6 +38,7 @@ export function LibraryList({ activeId }: { activeId?: string }) {
   const [tab, setTab] = useState<'read' | 'want'>(() => remember('lib.tab', 'read'))
   const [typeFilter, setTypeFilter] = useState<string | null>(null)
   const [closed, setClosed] = useState<string[]>(() => remember('lib.closed', []))
+  const [adding, setAdding] = useState(false)
 
   const typeById = useMemo(() => new Map((types ?? []).map((t) => [t.id, t])), [types])
 
@@ -98,7 +101,25 @@ export function LibraryList({ activeId }: { activeId?: string }) {
 
   return (
     <div className="liblist">
-      <h1 className="liblist-title">论文库</h1>
+      <div className="liblist-head">
+        <h1 className="liblist-title">论文库</h1>
+        {!adding && (
+          <button type="button" className="btn" onClick={() => setAdding(true)}>
+            <IconPlus />
+            添加论文
+          </button>
+        )}
+      </div>
+
+      {adding && (
+        <AddPaperForm
+          defaultStatus={tab}
+          onDone={(status) => {
+            setAdding(false)
+            pickTab(status)
+          }}
+        />
+      )}
 
       <div className="seg" role="group" aria-label="筛选">
         <button type="button" className="btn" aria-pressed={tab === 'read'} onClick={() => pickTab('read')}>
@@ -130,7 +151,7 @@ export function LibraryList({ activeId }: { activeId?: string }) {
           )}
 
           {papers && read.length === 0 && (
-            <p className="empty">还没有论文。在主页粘贴一篇论文的 Markdown，它会出现在这里。</p>
+            <p className="empty">还没有论文。在主页粘贴一篇论文的 Markdown，或点上面的“添加论文”。</p>
           )}
           {typeFilter && shown.length === 0 && read.length > 0 && (
             <p className="empty">没有带这个重点的论文。</p>
@@ -199,68 +220,105 @@ export function LibraryList({ activeId }: { activeId?: string }) {
   )
 }
 
-function WantList({ items }: { items: Paper[] }) {
-  const [title, setTitle] = useState('')
-  const [url, setUrl] = useState('')
+/** Where an AI-mentioned entry came from: the days whose record named it. */
+function Sources({ paper }: { paper: Paper }) {
+  const list = paper.mentioned_in ?? []
+  if (list.length === 0) return null
+  return (
+    <span className="want-meta">
+      提到它的记录：
+      {list.map((m, i) => (
+        <span key={m.record_id}>
+          {i > 0 && '、'}
+          <a href={`#/board/${m.date}`}>{shortDate(m.date)}</a>
+        </span>
+      ))}
+    </span>
+  )
+}
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault()
-    if (title.trim() === '') return
-    await addWant(title, url)
-    setTitle('')
-    setUrl('')
+function WantItem({ paper }: { paper: Paper }) {
+  const [editing, setEditing] = useState(false)
+  const name = paper.title || paper.doi || paper.url
+  const link = paper.url || (paper.doi ? `https://doi.org/${paper.doi}` : '')
+  const meta = [
+    paper.authors[0] ? paper.authors[0] + (paper.authors.length > 1 ? ' 等' : '') : '',
+    paper.year ?? '',
+    paper.venue,
+  ].filter(Boolean)
+
+  if (editing) {
+    return (
+      <li className="want-item is-editing">
+        <EditPaperForm paper={paper} onDone={() => setEditing(false)} />
+      </li>
+    )
   }
+  return (
+    <li className="want-item">
+      <div className="want-text">
+        {link ? (
+          <a className="want-title" href={link} target="_blank" rel="noopener noreferrer">
+            {name}
+          </a>
+        ) : (
+          <span className="want-title">{name}</span>
+        )}
+        {meta.length > 0 && <span className="want-meta">{meta.join(' · ')}</span>}
+        {paper.lookup === 'pending' && <span className="want-meta">文献信息还没查到，联网后会自动补上</span>}
+        {paper.lookup === 'failed' && (
+          <span className="want-meta">
+            按这个 DOI 没查到文献信息。
+            <button type="button" className="link-btn" onClick={() => void retryLookup(paper)}>
+              再查一次
+            </button>
+          </span>
+        )}
+        {paper.why && <span className="want-why">{paper.why}</span>}
+        <Sources paper={paper} />
+      </div>
+      <div className="want-actions">
+        <button type="button" className="btn btn-quiet" aria-label={`标为已读：${name}`} onClick={() => void markRead(paper)}>
+          标为已读
+        </button>
+        <button type="button" className="icon-btn" aria-label={`编辑：${name}`} onClick={() => setEditing(true)}>
+          <IconEdit />
+        </button>
+      </div>
+    </li>
+  )
+}
+
+function WantList({ items }: { items: Paper[] }) {
+  const [aiOpen, setAiOpen] = useState(false)
+  const newest = (list: Paper[]) => [...list].sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+  const mine = newest(items.filter((p) => p.added_by !== 'ai'))
+  const ai = newest(items.filter((p) => p.added_by === 'ai'))
 
   return (
     <>
-      <form className="want-form" onSubmit={(e) => void submit(e)}>
-        <label>
-          <span className="sr-only">标题</span>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="想看的论文标题" />
-        </label>
-        <label>
-          <span className="sr-only">链接</span>
-          <input
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="链接（可以不填）"
-            inputMode="url"
-            autoCapitalize="off"
-            autoCorrect="off"
-          />
-        </label>
-        <button type="submit" className="btn" disabled={title.trim() === ''}>
-          <IconPlus />
-          加进想看
-        </button>
-      </form>
-
-      {items.length === 0 && <p className="empty">想看的论文记在这里。导入后会自动移到"已读"。</p>}
+      {items.length === 0 && <p className="empty">想看的论文记在这里。导入它的 Markdown 后会自动移到“已读”。</p>}
       <ul className="want-list">
-        {[...items]
-          .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
-          .map((p) => (
-            <li key={p.id} className="want-item">
-              {p.url ? (
-                <a href={p.url} target="_blank" rel="noopener noreferrer">
-                  {p.title}
-                </a>
-              ) : (
-                <span>{p.title}</span>
-              )}
-              <button
-                type="button"
-                className="icon-btn"
-                aria-label={`从想看里去掉：${p.title}`}
-                onClick={() => {
-                  if (window.confirm(`从"想看"里去掉「${p.title}」？`)) void removeWant(p)
-                }}
-              >
-                <IconClose />
-              </button>
-            </li>
-          ))}
+        {mine.map((p) => (
+          <WantItem key={p.id} paper={p} />
+        ))}
       </ul>
+      {ai.length > 0 && (
+        <section className="group">
+          <button type="button" className="group-head" aria-expanded={aiOpen} onClick={() => setAiOpen(!aiOpen)}>
+            <span>AI 提到的</span>
+            <span className="group-count">{ai.length}</span>
+            <IconChevron />
+          </button>
+          {aiOpen && (
+            <ul className="want-list">
+              {ai.map((p) => (
+                <WantItem key={p.id} paper={p} />
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
     </>
   )
 }

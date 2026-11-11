@@ -136,3 +136,10 @@ export const IconSearch = () => (
     <path d="M16 16l4 4" />
   </Icon>
 )
+
+export const IconEdit = () => (
+  <Icon>
+    <path d="M4 20h4L19 9l-4-4L4 16v4z" />
+    <path d="M13.5 6.5l4 4" />
+  </Icon>
+)

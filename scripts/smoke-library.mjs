@@ -106,6 +106,26 @@ for (const size of sizes) {
     hasTouch: true,
     deviceScaleFactor: 2,
   })
+  await ctx.route('https://api.crossref.org/**', (route) => {
+    const doi = decodeURIComponent(route.request().url().split('/works/')[1] ?? '')
+    const cors = { 'access-control-allow-origin': '*', 'content-type': 'application/json' }
+    if (doi === '10.1145/test.found') {
+      return route.fulfill({
+        status: 200,
+        headers: cors,
+        body: JSON.stringify({
+          message: {
+            title: ['Crossref 查到的标题'],
+            author: [{ given: 'Ada', family: 'Lovelace' }, { given: 'Alan', family: 'Turing' }],
+            issued: { 'date-parts': [[2019]] },
+            'container-title': ['示例期刊'],
+          },
+        }),
+      })
+    }
+    if (doi === '10.1145/test.offline') return route.abort()
+    return route.fulfill({ status: 404, headers: cors, body: 'Resource not found.' })
+  })
   const page = await ctx.newPage()
   const errors = []
   page.on('pageerror', (e) => errors.push(e.message))
@@ -126,11 +146,12 @@ for (const size of sizes) {
   // ── a "想看" entry that the import should pick up
   await page.goto(`${url}#/library`)
   await page.getByRole('button', { name: /想看/ }).click()
-  await page.getByPlaceholder('想看的论文标题').fill('mold as material')
-  await page.getByPlaceholder('链接（可以不填）').fill('https://example.org/mold')
-  await page.getByRole('button', { name: '加进想看' }).click()
+  await page.getByRole('button', { name: '添加论文' }).click()
+  await page.getByLabel('标题').fill('mold as material')
+  await page.getByLabel('链接').fill('https://example.org/mold')
+  await page.getByRole('button', { name: '保存' }).click()
   await page.getByRole('button', { name: '想看 · 1' }).waitFor()
-  check(`${tag} 加进想看`, true)
+  check(`${tag} 添加论文：只填标题和链接，放进想看`, true)
 
   // ── imports
   await page.goto(url)
@@ -238,7 +259,64 @@ for (const size of sizes) {
   check(`${tag} 设置里改类型名称和颜色`, true)
   await page.screenshot({ path: `${out}/${size.name}-lib-3-settings.png`, fullPage: true })
 
-  check(`${tag} 没有报错`, errors.length === 0, errors.join(' | '))
+  // ── adding papers by hand; Crossref is replaced by a stand-in
+  await page.goto(`${url}#/library`)
+  const add = async (fields, status) => {
+    await page.getByRole('button', { name: '添加论文' }).click()
+    for (const [label, value] of Object.entries(fields)) await page.getByLabel(label, { exact: true }).fill(value)
+    if (status) await page.locator('.paper-form .seg').getByRole('button', { name: status, exact: true }).click()
+    await page.getByRole('button', { name: '保存' }).click()
+  }
+  await page.getByRole('button', { name: /^想看/ }).click()
+  await add({ DOI: 'https://doi.org/10.1145/TEST.found', '为什么想看（可以不填）': '老师提到过' }, '想看')
+  const found = page.locator('.want-item', { hasText: 'Crossref 查到的标题' })
+  await found.waitFor()
+  check(`${tag} 只填 DOI：标题、作者、年份、期刊自动补全`, (await found.innerText()).includes('Ada Lovelace 等 · 2019 · 示例期刊'))
+  check(`${tag} “为什么想看”显示在条目下方`, await found.locator('.want-why', { hasText: '老师提到过' }).isVisible())
+
+  await add({ DOI: '10.1145/test.missing' }, '想看')
+  await page.locator('.want-item', { hasText: '按这个 DOI 没查到' }).waitFor()
+  check(`${tag} 查不到时照样保存，并说明没查到`, true)
+
+  await add({ DOI: '10.1145/test.offline' }, '想看')
+  await page.locator('.want-item', { hasText: '联网后会自动补上' }).waitFor()
+  check(`${tag} 断网时照样保存，等联网再补`, true)
+
+  await add({ DOI: '10.1145/test.found' }, '想看')
+  await page.getByText(/库里已经有这篇了/).waitFor()
+  check(`${tag} 同一个 DOI 不会加两次`, true)
+  await page.locator('.paper-form').getByRole('button', { name: '取消' }).click()
+
+  await found.getByRole('button', { name: /^编辑/ }).click()
+  await page.getByLabel('为什么想看', { exact: true }).fill('改过的理由')
+  await page.getByLabel('标题', { exact: true }).fill('我改的标题')
+  await page.getByRole('button', { name: '保存' }).click()
+  const edited = page.locator('.want-item', { hasText: '我改的标题' })
+  await edited.locator('.want-why', { hasText: '改过的理由' }).waitFor()
+  check(`${tag} 想看条目可以编辑标题和理由`, true)
+  check(`${tag} 想看列表：可点元素 ≥ 44px`, (await smallTargets()).length === 0, (await smallTargets()).join(', '))
+  check(`${tag} 想看列表：没有横向滚动`, await noSideScroll())
+  await page.screenshot({ path: `${out}/${size.name}-lib-4-want.png`, fullPage: true })
+
+  await edited.getByRole('button', { name: /^标为已读/ }).click()
+  await page.getByRole('button', { name: /^已读/ }).click()
+  await page.locator('.paper-row', { hasText: '我改的标题' }).click()
+  await page.getByRole('heading', { name: '我改的标题', level: 1 }).waitFor()
+  check(`${tag} 标为已读：移到已读，有自己的论文页`, true)
+  await page.getByRole('button', { name: '编辑信息' }).click()
+  await page.getByLabel('期刊或会议').fill('手动填的会议')
+  await page.getByRole('button', { name: '保存' }).click()
+  await page.locator('.paper-meta', { hasText: '手动填的会议' }).waitFor()
+  check(`${tag} 论文页可以手动补作者、年份、期刊`, true)
+
+  await page.goto(`${url}#/library`)
+  await add({ 标题: '直接加成已读的论文' }, '已读')
+  await page.locator('.paper-row', { hasText: '直接加成已读的论文' }).click()
+  await page.getByRole('heading', { name: '直接加成已读的论文', level: 1 }).waitFor()
+  check(`${tag} 添加时选“已读”：得到一个空的论文页`, true)
+  await page.screenshot({ path: `${out}/${size.name}-lib-5-empty-paper.png`, fullPage: true })
+
+  check(`${tag} 没有报错`, errors.filter((e) => !e.includes('Failed to load resource')).length === 0, errors.join(' | '))
   await ctx.close()
 }
 

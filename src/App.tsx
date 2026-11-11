@@ -5,6 +5,7 @@ import { Library } from './views/library/Library'
 import { Settings } from './views/settings/Settings'
 import { SyncBanner } from './ui/SyncBanner'
 import { initSync } from './sync/controller'
+import { initLookups } from './store/lookup'
 
 function currentRoute(): string {
   return window.location.hash.replace(/^#/, '') || '/'
@@ -20,6 +21,7 @@ export default function App() {
     }
     window.addEventListener('hashchange', onChange)
     void initSync()
+    initLookups()
     return () => window.removeEventListener('hashchange', onChange)
   }, [])
 

@@ -26,8 +26,9 @@ check('有主屏幕图标（apple-touch-icon）', await page.evaluate(() => fetc
 // something stored locally, to see it again offline
 await page.goto(`${url}#/library`)
 await page.getByRole('button', { name: /想看/ }).click()
-await page.getByPlaceholder('想看的论文标题').fill('离线前记下的论文')
-await page.getByRole('button', { name: '加进想看' }).click()
+await page.getByRole('button', { name: '添加论文' }).click()
+await page.getByLabel('标题').fill('离线前记下的论文')
+await page.getByRole('button', { name: '保存' }).click()
 await page.getByText('离线前记下的论文').waitFor()
 
 await ctx.setOffline(true)

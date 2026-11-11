@@ -64,6 +64,14 @@ export interface Paper extends Synced {
   /** The "基础" section as written. Empty string when not filled yet. */
   basics_md: string
   created_at: ISODateTime
+  /** "为什么想看", one line, editable. Absent on entries from before this field existed. */
+  why?: string
+  /** Who put it in the library. Absent = 'me' (older entries, and papers that came in through a paper import). */
+  added_by?: 'me' | 'ai'
+  /** For entries the AI mentioned: the research records whose `papers:` list named this DOI. */
+  mentioned_in?: { date: ISODate; record_id: string }[]
+  /** Crossref lookup by DOI. Absent = never asked. 'pending' is retried when the device is online. */
+  lookup?: 'pending' | 'done' | 'failed'
 }
 
 /** A highlight block (重点区块) or an unrecognised section of a paper. */

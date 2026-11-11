@@ -8,8 +8,10 @@ import { EditableText } from '../../ui/EditableText'
 import { IconBack, IconPlus } from '../../ui/icons'
 import { AddToPile } from '../piles/AddToPile'
 import { CommentRail } from './CommentRail'
+import { EditPaperForm } from './PaperForm'
 
 export function PaperPage({ id }: { id: string }) {
+  const [editingInfo, setEditingInfo] = useState(false)
   const paper = useLiveQuery(() => db.papers.get(id), [id])
   const blocks = useLiveQuery(
     () => db.blocks.where('paper_id').equals(id).filter((b) => !b.deleted).sortBy('order'),
@@ -48,7 +50,7 @@ export function PaperPage({ id }: { id: string }) {
       <article className="paper-main">
         <BackLink />
         <header className="paper-head">
-          <h1>{paper.title || '（没有标题）'}</h1>
+          <h1>{paper.title || paper.doi || '（没有标题）'}</h1>
           {meta.length > 0 && <p className="paper-meta">{meta.join(' · ')}</p>}
           <p className="paper-meta">
             {paper.doi && (
@@ -56,8 +58,22 @@ export function PaperPage({ id }: { id: string }) {
                 doi.org/{paper.doi}
               </a>
             )}
+            {paper.url && (
+              <a href={paper.url} target="_blank" rel="noopener noreferrer">
+                打开链接
+              </a>
+            )}
             {paper.category && <span className="tag">{paper.category}</span>}
           </p>
+          {paper.lookup === 'pending' && <p className="paper-meta">文献信息还没查到，联网后会自动补上</p>}
+          {paper.why && <p className="want-why">{paper.why}</p>}
+          {editingInfo ? (
+            <EditPaperForm paper={paper} full onDone={() => setEditingInfo(false)} />
+          ) : (
+            <button type="button" className="btn btn-quiet paper-edit-info" onClick={() => setEditingInfo(true)}>
+              编辑信息
+            </button>
+          )}
         </header>
 
         <section className="oneliner" aria-label="一句话总结">
