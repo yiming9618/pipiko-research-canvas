@@ -1,5 +1,6 @@
 import { IconSettings } from './icons'
 import { SearchBox } from './SearchBox'
+import { useSync } from '../views/settings/SyncSection'
 
 type Place = 'home' | 'board' | 'library' | 'settings'
 
@@ -10,6 +11,7 @@ const LINKS: { place: Place; href: string; label: string }[] = [
 ]
 
 export function TopNav({ current }: { current: Place }) {
+  const stopped = useSync().phase === 'problem'
   return (
     <nav className="topnav" aria-label="主导航">
       <div className="topnav-links">
@@ -24,10 +26,11 @@ export function TopNav({ current }: { current: Place }) {
         <a
           className="icon-btn"
           href="#/settings"
-          aria-label="设置"
+          aria-label={stopped ? '设置（同步停了）' : '设置'}
           aria-current={current === 'settings' ? 'page' : undefined}
         >
           <IconSettings />
+          {stopped && <span className="sync-dot" aria-hidden="true" />}
         </a>
       </div>
     </nav>

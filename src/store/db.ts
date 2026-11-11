@@ -26,8 +26,15 @@ export interface DirtyRow {
   updated_at: string
 }
 
+/** Local-only: things that belong to this device alone (sync connection, sync bookkeeping). Never synced or exported. */
+export interface DeviceRow {
+  key: string
+  value: unknown
+}
+
 type Db = Dexie & { [K in TableName]: EntityTable<Tables[K], 'id'> } & {
   dirty: EntityTable<DirtyRow, 'key'>
+  device: EntityTable<DeviceRow, 'key'>
 }
 
 export const db = new Dexie('research-notebook') as Db
@@ -49,6 +56,10 @@ db.version(1).stores({
 })
 
 db.version(2).stores({ dirty: 'key' })
+db.version(3).stores({ device: 'key' })
+
+/** Called after every change made on this device (not for changes that arrive through sync). */
+export const localChangeListeners = new Set<() => void>()
 
 db.on('populate', (tx) => {
   tx.table('types').bulkAdd(builtinTypes())
@@ -67,6 +78,7 @@ export async function applyChanges(changes: Changes): Promise<void> {
       )
     }
   })
+  for (const listener of localChangeListeners) listener()
 }
 
 /** Random id that also works on plain http (where crypto.randomUUID is missing). */

@@ -10,6 +10,7 @@ import { saveType } from '../../store/paperActions'
 import { IconDownload, IconUndo, IconUpload } from '../../ui/icons'
 import { TopNav } from '../../ui/TopNav'
 import { useUndo } from '../../ui/useUndo'
+import { SyncSection } from './SyncSection'
 
 const COLORS: [string, string][] = [
   ['default', '米色'],
@@ -215,12 +216,7 @@ export function Settings() {
         </p>
       </section>
 
-      <section className="section" aria-labelledby="s-sync">
-        <h2 id="s-sync">同步</h2>
-        <p className="section-note">
-          还没有连接。现在每台设备的内容各存各的，手机上导入的不会出现在 iPad 上。要搬到另一台设备，先用上面的备份。
-        </p>
-      </section>
+      <SyncSection />
 
       {dialog}
     </main>

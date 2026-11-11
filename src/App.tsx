@@ -3,6 +3,8 @@ import { BoardPage } from './views/board/BoardPage'
 import { Home } from './views/home/Home'
 import { Library } from './views/library/Library'
 import { Settings } from './views/settings/Settings'
+import { SyncBanner } from './ui/SyncBanner'
+import { initSync } from './sync/controller'
 
 function currentRoute(): string {
   return window.location.hash.replace(/^#/, '') || '/'
@@ -17,14 +19,21 @@ export default function App() {
       window.scrollTo(0, 0)
     }
     window.addEventListener('hashchange', onChange)
+    void initSync()
     return () => window.removeEventListener('hashchange', onChange)
   }, [])
 
-  if (route === '/settings') return <Settings />
-  if (route === '/board') return <BoardPage />
-  if (route.startsWith('/board/')) return <BoardPage param={route.slice(7)} />
-  if (route.startsWith('/pile/')) return <BoardPage pileId={decodeURIComponent(route.slice(6))} />
-  if (route === '/library') return <Library />
-  if (route.startsWith('/paper/')) return <Library paperId={decodeURIComponent(route.slice(7))} />
-  return <Home />
+  let page = <Home />
+  if (route === '/settings') page = <Settings />
+  else if (route === '/board') page = <BoardPage />
+  else if (route.startsWith('/board/')) page = <BoardPage param={route.slice(7)} />
+  else if (route.startsWith('/pile/')) page = <BoardPage pileId={decodeURIComponent(route.slice(6))} />
+  else if (route === '/library') page = <Library />
+  else if (route.startsWith('/paper/')) page = <Library paperId={decodeURIComponent(route.slice(7))} />
+  return (
+    <>
+      {page}
+      <SyncBanner onSettings={route === '/settings'} />
+    </>
+  )
 }

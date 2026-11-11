@@ -1,5 +1,5 @@
 // The data repo on GitHub, spoken to through its REST API.
-// NOT connected yet: nothing in the app creates this until a token is set up.
+// Created by sync/controller.ts once a token has been entered on this device.
 
 import { ConflictError, type RemoteSnapshot, type RemoteStore, type RemoteWrite } from './engine'
 
@@ -32,7 +32,7 @@ export function explainFailure(status: number, expired: boolean): SyncProblem {
       'token',
       expired
         ? '访问令牌已过期，现在没有在同步。这台设备上的内容都还在。'
-        : '访问令牌已失效（可能被撤销或填错了），现在没有在同步。这台设备上的内容都还在。',
+        : '访问令牌已失效（可能过期了、被撤销或填错了），现在没有在同步。这台设备上的内容都还在。',
       NEW_TOKEN_STEPS,
     )
   }
@@ -145,9 +145,15 @@ export class GitHubRemote implements RemoteStore {
 
   async commit(head: string | null, writes: RemoteWrite[], message: string): Promise<RemoteSnapshot> {
     if (head === null) {
-      throw new SyncProblem('other', '数据仓库还是空的。请先在 GitHub 上给它加一个 README 文件，再回来同步。', [
-        '打开数据仓库的页面，点 "creating a new file" 或 "Add a README"，直接保存',
-      ])
+      // A repo with no commits cannot take a commit through this API; give it a first file, then carry on.
+      const text = '# 研究笔记本的数据\n\n这个仓库由研究笔记本自动写入，请不要手动改动 data/ 里的文件。\n'
+      const bytes = new TextEncoder().encode(text)
+      await this.call('PUT', '/contents/README.md', {
+        message: '建立数据仓库',
+        content: btoa(String.fromCharCode(...bytes)),
+      })
+      head = (await this.list()).head
+      if (head === null) throw new SyncProblem('other', '数据仓库还是空的，没能写入第一份文件。过一会儿会自动再试。')
     }
     const parent = await this.call<{ tree: { sha: string } }>('GET', `/git/commits/${head}`)
     const tree: { path: string; mode: '100644'; type: 'blob'; sha?: string; content?: string }[] = []

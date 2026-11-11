@@ -37,6 +37,16 @@ export class SyncScheduler {
     this.schedule(0)
   }
 
+  /** The person asked for a sync right now: skips the waiting, but never runs two rounds at once. */
+  runNow(): void {
+    if (this.running) {
+      this.again = true
+      return
+    }
+    if (this.timer) clearTimeout(this.timer)
+    void this.fire()
+  }
+
   stop(): void {
     if (this.timer) clearTimeout(this.timer)
     this.timer = null
