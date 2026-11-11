@@ -312,6 +312,7 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
       (await page.locator('.node.photo').count()) === 1 &&
       (await page.locator('.node.card', { hasText: '研究卡片分五种就够了。' }).count()) === 1
     check(`${tag} 刷新后编辑都还在`, kept)
+    await page.screenshot({ path: `${out}/${size.name}-board-5-reloaded.png` })
     await page.locator('.node.cover').first().getByRole('button', { name: '原文' }).click()
     const rawOk = await page
       .locator('dialog .raw', { hasText: '研究卡片要分成哪几种？' })

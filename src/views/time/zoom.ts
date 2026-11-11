@@ -102,13 +102,19 @@ const OUT_AT = 0.8
  * gesture feels attached; letting go past a threshold changes level.
  * One-finger scrolling is left to the browser.
  */
-export function usePinchNav(ref: RefObject<HTMLElement | null>, opts: PinchOptions): void {
+export function usePinchNav(
+  ref: RefObject<HTMLElement | null>,
+  opts: PinchOptions,
+  /** Where the gesture is listened for, when that is larger than the element that moves. */
+  area?: RefObject<HTMLElement | null>,
+): void {
   const latest = useRef(opts)
   latest.current = opts
 
   useEffect(() => {
     const el = ref.current
-    if (!el) return
+    const target = area?.current ?? el
+    if (!el || !target) return
     let scale = 1
     let at = { x: 0, y: 0 }
     let active = false
@@ -210,24 +216,24 @@ export function usePinchNav(ref: RefObject<HTMLElement | null>, opts: PinchOptio
       else wheelTimer = setTimeout(end, 180)
     }
 
-    el.addEventListener('gesturestart', onGestureStart)
-    el.addEventListener('gesturechange', onGestureChange)
-    el.addEventListener('gestureend', onGestureEnd)
-    el.addEventListener('pointerdown', onPointerDown)
-    el.addEventListener('pointermove', onPointerMove)
-    el.addEventListener('pointerup', onPointerUp)
-    el.addEventListener('pointercancel', onPointerUp)
-    el.addEventListener('wheel', onWheel, { passive: false })
+    target.addEventListener('gesturestart', onGestureStart)
+    target.addEventListener('gesturechange', onGestureChange)
+    target.addEventListener('gestureend', onGestureEnd)
+    target.addEventListener('pointerdown', onPointerDown)
+    target.addEventListener('pointermove', onPointerMove)
+    target.addEventListener('pointerup', onPointerUp)
+    target.addEventListener('pointercancel', onPointerUp)
+    target.addEventListener('wheel', onWheel, { passive: false })
     return () => {
       if (wheelTimer) clearTimeout(wheelTimer)
-      el.removeEventListener('gesturestart', onGestureStart)
-      el.removeEventListener('gesturechange', onGestureChange)
-      el.removeEventListener('gestureend', onGestureEnd)
-      el.removeEventListener('pointerdown', onPointerDown)
-      el.removeEventListener('pointermove', onPointerMove)
-      el.removeEventListener('pointerup', onPointerUp)
-      el.removeEventListener('pointercancel', onPointerUp)
-      el.removeEventListener('wheel', onWheel)
+      target.removeEventListener('gesturestart', onGestureStart)
+      target.removeEventListener('gesturechange', onGestureChange)
+      target.removeEventListener('gestureend', onGestureEnd)
+      target.removeEventListener('pointerdown', onPointerDown)
+      target.removeEventListener('pointermove', onPointerMove)
+      target.removeEventListener('pointerup', onPointerUp)
+      target.removeEventListener('pointercancel', onPointerUp)
+      target.removeEventListener('wheel', onWheel)
     }
-  }, [ref])
+  }, [ref, area])
 }

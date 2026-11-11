@@ -4,6 +4,8 @@ import { shortDate } from '../../domain/importer'
 import type { HighlightType, ImportEntry } from '../../domain/types'
 import { downloadJson, exportAll, importBackup, parseBackup } from '../../store/backup'
 import { db, todayLocal } from '../../store/db'
+import { sampleImports } from '../../dev/samples'
+import { runImport } from '../../store/actions'
 import { saveType } from '../../store/paperActions'
 import { IconBack, IconDownload, IconUndo, IconUpload } from '../../ui/icons'
 import { useUndo } from '../../ui/useUndo'
@@ -66,6 +68,35 @@ function TypeEditor() {
           </li>
         ))}
       </ul>
+    </section>
+  )
+}
+
+/** Only in the local test build: one tap to fill the notebook with placeholder content. */
+function Samples() {
+  const [status, setStatus] = useState('')
+  const add = async () => {
+    const lines: string[] = []
+    for (const sample of sampleImports(todayLocal())) {
+      const out = await runImport(sample.md, sample.kind)
+      lines.push(out.message)
+    }
+    setStatus(lines.join('；'))
+  }
+  return (
+    <section className="section" aria-labelledby="s-samples">
+      <h2 id="s-samples">测试用</h2>
+      <p className="section-note">
+        只在本地测试版里出现。放入两篇占位论文和两份引用它们的研究记录（今天和三天前）。每一份都可以在上面的"最近导入"里撤销。
+      </p>
+      <div className="row-actions">
+        <button type="button" className="btn" onClick={() => void add()}>
+          放入示例内容
+        </button>
+      </div>
+      <p className="status-line" role="status" aria-live="polite">
+        {status}
+      </p>
     </section>
   )
 }
@@ -153,6 +184,8 @@ export function Settings() {
       </section>
 
       <TypeEditor />
+
+      {import.meta.env.DEV && <Samples />}
 
       <section className="section" aria-labelledby="s-backup">
         <h2 id="s-backup">备份</h2>

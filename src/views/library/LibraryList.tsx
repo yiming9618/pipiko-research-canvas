@@ -3,6 +3,7 @@ import { useMemo, useState, type FormEvent } from 'react'
 import type { HighlightType, Paper } from '../../domain/types'
 import { db } from '../../store/db'
 import { addWant, removeWant } from '../../store/paperActions'
+import { DRAG_TYPE } from '../../store/pileActions'
 import { IconChevron, IconClose, IconPlus } from '../../ui/icons'
 
 const UNCATEGORISED = '未分类'
@@ -166,6 +167,11 @@ export function LibraryList({ activeId }: { activeId?: string }) {
                             className="paper-row"
                             href={`#/paper/${p.id}`}
                             aria-current={p.id === activeId ? 'page' : undefined}
+                            draggable
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData(DRAG_TYPE, JSON.stringify({ type: 'paper', id: p.id }))
+                              e.dataTransfer.effectAllowed = 'copy'
+                            }}
                           >
                             <span className="paper-row-title">{p.title || '（没有标题）'}</span>
                             {meta.length > 0 && <span className="paper-row-meta">{meta.join(' · ')}</span>}

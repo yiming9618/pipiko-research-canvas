@@ -2,6 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useMemo, useRef } from 'react'
 import type { Card, CardKind, ResearchRecord } from '../../domain/types'
 import { db, todayLocal } from '../../store/db'
+import { PileShelf } from '../piles/PileShelf'
 import { Crumb } from './Crumb'
 import { rememberOrigin, usePinchNav, useStageAnimation } from './zoom'
 
@@ -70,6 +71,7 @@ export function MonthView({ ym, days }: { ym: string; days: string[] }) {
 
   const ready = records !== undefined && cards !== undefined && reads !== undefined
   const stage = useRef<HTMLDivElement>(null)
+  const area = useRef<HTMLDivElement>(null)
   useStageAnimation(stage, 1, ym, ready)
   usePinchNav(stage, {
     onIn: (tile) => {
@@ -78,7 +80,7 @@ export function MonthView({ ym, days }: { ym: string; days: string[] }) {
     onOut: () => {
       window.location.hash = `#/board/${year}`
     },
-  })
+  }, area)
 
   const months = [...new Set(days.map((d) => d.slice(0, 7)))]
   const prev = [...months].reverse().find((m) => m < ym)
@@ -88,7 +90,7 @@ export function MonthView({ ym, days }: { ym: string; days: string[] }) {
   const count = byDate.size
 
   return (
-    <div className="timeview">
+    <div className="timeview" ref={area}>
       <header className="board-head">
         <Crumb
           year={year}
@@ -121,6 +123,8 @@ export function MonthView({ ym, days }: { ym: string; days: string[] }) {
           )
         })}
       </div>
+
+      <PileShelf />
     </div>
   )
 }

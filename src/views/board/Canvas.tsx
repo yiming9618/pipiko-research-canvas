@@ -72,6 +72,8 @@ interface Props {
   /** Space kept clear at the top for the header. */
   topInset?: number
   inkColor: string
+  /** A dragged node was let go over an element marked `data-pile-drop`: it stays where it was. */
+  onDropOn?: (key: string, target: HTMLElement) => void
   /** Called when the user keeps pinching in after the board is already at its smallest. */
   onZoomOut?: () => void
   /** Lets the parent turn a screen point into a board position (for placing new items). */
@@ -155,6 +157,13 @@ export function Canvas(props: Props) {
   const pointers = useRef(new Map<number, { x: number; y: number }>())
   const gesture = useRef<Gesture | null>(null)
   const fitK = useRef(1)
+  const dropTarget = useRef<HTMLElement | null>(null)
+  const setDropTarget = (el: HTMLElement | null) => {
+    if (el === dropTarget.current) return
+    dropTarget.current?.classList.remove('is-over')
+    el?.classList.add('is-over')
+    dropTarget.current = el
+  }
   const zoomOut = useRef(props.onZoomOut)
   zoomOut.current = props.onZoomOut
   /** Smallest zoom. With a level above this board, half the fitted size is the floor; past it we leave. */
@@ -409,6 +418,9 @@ export function Canvas(props: Props) {
         if (!g.moved && Math.hypot(p.x - g.sx, p.y - g.sy) < DRAG_THRESHOLD) return
         g.moved = true
         setOverrides((o) => ({ ...o, [g.key]: { ...o[g.key], x: g.x + (p.x - g.sx) / k, y: g.y + (p.y - g.sy) / k } }))
+        if (props.onDropOn) {
+          setDropTarget(document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-pile-drop]') ?? null)
+        }
         return
       }
       case 'resize':
@@ -454,7 +466,17 @@ export function Canvas(props: Props) {
     const k = viewRef.current.k
     const cancelled = e.type === 'pointercancel'
 
-    if (g.type === 'drag' && g.moved && !cancelled) {
+    const droppedOn = dropTarget.current
+    setDropTarget(null)
+    if (g.type === 'drag' && g.moved && !cancelled && droppedOn && props.onDropOn) {
+      // Put into a pile: the card itself goes back to where it was.
+      props.onDropOn(g.key, droppedOn)
+      setOverrides((o) => {
+        const next = { ...o }
+        delete next[g.key]
+        return next
+      })
+    } else if (g.type === 'drag' && g.moved && !cancelled) {
       props.onMove(g.key, g.x + (p.x - g.sx) / k, g.y + (p.y - g.sy) / k)
     } else if (g.type === 'resize' && !cancelled) {
       props.onResize(g.key, Math.max(160, g.w + (p.x - g.sx) / k))

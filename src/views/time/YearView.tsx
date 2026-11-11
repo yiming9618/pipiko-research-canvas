@@ -25,19 +25,20 @@ export function YearView({ year, days }: { year: string; days: string[] }) {
 
   const ready = records !== undefined
   const stage = useRef<HTMLDivElement>(null)
+  const area = useRef<HTMLDivElement>(null)
   useStageAnimation(stage, 0, year, ready)
   usePinchNav(stage, {
     onIn: (tile) => {
       if (tile?.dataset.zoom) window.location.hash = `#/board/${tile.dataset.zoom}`
     },
-  })
+  }, area)
 
   const years = [...new Set(days.map((d) => d.slice(0, 4)))]
   const prev = [...years].reverse().find((y) => y < year)
   const next = years.find((y) => y > year)
 
   return (
-    <div className="timeview">
+    <div className="timeview" ref={area}>
       <header className="board-head">
         <Crumb
           year={year}
