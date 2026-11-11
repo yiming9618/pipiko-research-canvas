@@ -1,4 +1,5 @@
 import { IconSettings } from './icons'
+import { SearchBox } from './SearchBox'
 
 type Place = 'home' | 'board' | 'library' | 'settings'
 
@@ -18,14 +19,17 @@ export function TopNav({ current }: { current: Place }) {
           </a>
         ))}
       </div>
-      <a
-        className="icon-btn"
-        href="#/settings"
-        aria-label="设置"
-        aria-current={current === 'settings' ? 'page' : undefined}
-      >
-        <IconSettings />
-      </a>
+      <div className="topnav-tools">
+        <SearchBox />
+        <a
+          className="icon-btn"
+          href="#/settings"
+          aria-label="设置"
+          aria-current={current === 'settings' ? 'page' : undefined}
+        >
+          <IconSettings />
+        </a>
+      </div>
     </nav>
   )
 }

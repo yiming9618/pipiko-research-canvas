@@ -1,19 +1,13 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useMemo, useRef } from 'react'
-import type { Card, CardKind, ResearchRecord } from '../../domain/types'
+import { KIND_COLOR } from '../../domain/colors'
+import type { Card, ResearchRecord } from '../../domain/types'
 import { db, todayLocal } from '../../store/db'
 import { PileShelf } from '../piles/PileShelf'
 import { Crumb } from './Crumb'
 import { rememberOrigin, usePinchNav, useStageAnimation } from './zoom'
 
-export const KIND_COLOR: Record<CardKind, string> = {
-  发现: 'blue',
-  实验: 'green',
-  问题: 'pink',
-  思考: 'yellow',
-  下一步: 'orange',
-  其他: 'default',
-}
+export { KIND_COLOR }
 
 const PERIODS = [
   { label: '上旬', from: 1, to: 10 },

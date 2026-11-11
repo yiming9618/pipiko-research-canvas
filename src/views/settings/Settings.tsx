@@ -7,7 +7,8 @@ import { db, todayLocal } from '../../store/db'
 import { sampleImports } from '../../dev/samples'
 import { runImport } from '../../store/actions'
 import { saveType } from '../../store/paperActions'
-import { IconBack, IconDownload, IconUndo, IconUpload } from '../../ui/icons'
+import { IconDownload, IconUndo, IconUpload } from '../../ui/icons'
+import { TopNav } from '../../ui/TopNav'
 import { useUndo } from '../../ui/useUndo'
 
 const COLORS: [string, string][] = [
@@ -141,10 +142,8 @@ export function Settings() {
 
   return (
     <main className="page">
+      <TopNav current="settings" />
       <header className="page-head">
-        <a className="icon-btn" href="#/" aria-label="回到主页">
-          <IconBack />
-        </a>
         <h1>设置</h1>
       </header>
 

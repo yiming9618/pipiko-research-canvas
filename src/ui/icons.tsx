@@ -129,3 +129,10 @@ export const IconText = () => (
     <path d="M5 6V5h14v1M12 5v14M9 19h6" />
   </Icon>
 )
+
+export const IconSearch = () => (
+  <Icon>
+    <circle cx="11" cy="11" r="6.500" />
+    <path d="M16 16l4 4" />
+  </Icon>
+)
