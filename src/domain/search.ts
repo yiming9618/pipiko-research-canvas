@@ -28,7 +28,7 @@ export interface TypeNames {
   names: string[]
 }
 
-export type DocKind = 'paper' | 'block' | 'comment' | 'record' | 'card' | 'pile'
+export type DocKind = 'paper' | 'block' | 'comment' | 'record' | 'card' | 'pile' | 'board'
 
 export interface Doc {
   key: string
@@ -46,7 +46,7 @@ export interface Doc {
   label: string
   color: string
   href: string
-  /** What dragging the result into a pile adds. */
+  /** What dragging the result onto a board shows there. */
   ref: { type: BoardRefType; id: string } | null
 }
 

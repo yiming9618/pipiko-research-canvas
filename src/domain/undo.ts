@@ -53,7 +53,7 @@ export function planUndo(entry: ImportEntry, snap: UndoSnapshot, now: ISODateTim
       (c) => itemIds.has(c.from) || itemIds.has(c.to) || keys.has(c.from) || keys.has(c.to),
     )
 
-    const onDay = items.filter((i) => i.board_id.startsWith('day:'))
+    const onDay = items.filter((i) => !i.board_id.startsWith('pile:'))
     const edited = onDay.filter((i) => i.text_override !== undefined).length
     const moved = onDay.length - edited
     if (edited > 0) impacts.push(`${edited} ${noun}改过文字`)

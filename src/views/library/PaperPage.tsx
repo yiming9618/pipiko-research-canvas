@@ -1,12 +1,13 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
+import { boardHref } from '../../domain/boards'
 import { shortDate } from '../../domain/importer'
+import { recordBoardId } from '../../domain/migrate'
 import type { HighlightType, Paper, PaperBlock } from '../../domain/types'
 import { db } from '../../store/db'
 import { addBlock, deleteBlock, saveBlockText, savePaperField } from '../../store/paperActions'
 import { EditableText } from '../../ui/EditableText'
 import { IconBack, IconPlus } from '../../ui/icons'
-import { AddToPile } from '../piles/AddToPile'
 import { AddToDiscussion } from '../discussions/AddToDiscussion'
 import { CommentRail } from './CommentRail'
 import { EditPaperForm } from './PaperForm'
@@ -27,7 +28,13 @@ export function PaperPage({ id }: { id: string }) {
     const p = await db.papers.get(id)
     if (!p?.doi) return []
     const records = await db.records.filter((r) => !r.deleted && r.paper_dois.includes(p.doi)).toArray()
-    return [...new Set(records.map((r) => r.date))].sort()
+    const boards = await db.boards.toArray()
+    // the boards those records are on, each once
+    const ids = [...new Set(records.map(recordBoardId))]
+    return ids
+      .map((boardId) => ({ boardId, name: boards.find((b) => b.id === boardId && !b.deleted)?.name }))
+      .filter((x): x is { boardId: string; name: string } => !!x.name)
+      .sort((a, b) => a.name.localeCompare(b.name, 'zh'))
   }, [id])
 
   if (paper === undefined && blocks === undefined) return null
@@ -112,17 +119,15 @@ export function PaperPage({ id }: { id: string }) {
         )}
 
         <footer className="paper-foot">
-          <AddToPile target={{ type: 'paper', id: paper.id }} />
           <AddToDiscussion refs={[{ type: 'paper', id: paper.id }]} />
           {citedOn && citedOn.length > 0 && (
             <p className="cited">
               被引用于：
-              {citedOn.map((d) => (
-                <a key={d} href={`#/board/${d}`}>
-                  {shortDate(d)}
+              {citedOn.map((b) => (
+                <a key={b.boardId} href={boardHref(b.boardId)}>
+                  {b.name}
                 </a>
               ))}
-              的画板
             </p>
           )}
           {readDates.length > 0 && (

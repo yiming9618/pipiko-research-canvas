@@ -7,7 +7,9 @@ type Kind = (typeof CARD_KINDS)[number]
 interface Props {
   /** Editing this hand-written card; absent when writing a new one. */
   card?: Card
-  onSave: (kind: Kind, text: string) => void
+  /** The date the card belongs to (today for a new one). */
+  defaultDate: string
+  onSave: (kind: Kind, text: string, date: string) => void
   onDelete?: () => void
   onClose: () => void
 }
@@ -16,7 +18,8 @@ interface Props {
  * Writing a research card by hand: pick the kind, then the words. A plain
  * text field, so the keyboard's dictation works as it does anywhere else.
  */
-export function CardDialog({ card, onSave, onDelete, onClose }: Props) {
+export function CardDialog({ card, defaultDate, onSave, onDelete, onClose }: Props) {
+  const [date, setDate] = useState(card?.date ?? defaultDate)
   const [kind, setKind] = useState<Kind>(card && card.kind !== '其他' ? card.kind : '发现')
   const [text, setText] = useState(card?.body_md ?? '')
   const ref = useRef<HTMLDialogElement>(null)
@@ -31,7 +34,7 @@ export function CardDialog({ card, onSave, onDelete, onClose }: Props) {
   const submit = (e: FormEvent) => {
     e.preventDefault()
     if (!text.trim()) return
-    onSave(kind, text)
+    onSave(kind, text, date || defaultDate)
   }
 
   return (
@@ -56,6 +59,10 @@ export function CardDialog({ card, onSave, onDelete, onClose }: Props) {
             placeholder="写下来，或点键盘上的话筒说出来"
             rows={5}
           />
+        </label>
+        <label className="field card-dialog-date">
+          <span>日期</span>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </label>
         <div className="dialog-actions">
           {card && onDelete && (

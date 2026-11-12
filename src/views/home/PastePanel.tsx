@@ -1,4 +1,8 @@
+import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useRef, useState } from 'react'
+import { boardHref, mostRecentBoard, sortBoards } from '../../domain/boards'
+import type { BoardTarget } from '../../domain/importer'
+import { db } from '../../store/db'
 import { PAPER_PROMPT, RESEARCH_PROMPT } from '../../domain/templates'
 import type { ImportEntry, ImportKind } from '../../domain/types'
 import { confirmSameAsWant, runImport } from '../../store/actions'
@@ -12,7 +16,13 @@ interface Result {
   entry?: ImportEntry
   plain?: boolean
   similar?: { paper_id: string; want_id: string; want_title: string }
+  /** The Markdown names a board that does not exist: waiting for the person to choose. */
+  needsBoard?: { name: string; similar: { id: string; name: string }[]; text: string }
+  /** Where a research import went, to offer a way there. */
+  board?: { id: string; name: string }
 }
+
+const NEW_BOARD = '__new'
 
 const KIND_LABEL: Record<ImportKind, string> = { research: '研究记录', paper: '论文' }
 
@@ -22,6 +32,15 @@ export function PastePanel() {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<Result | null>(null)
   const [copied, setCopied] = useState<'ok' | 'fail' | null>(null)
+  // which board a research record goes onto: '' = the one used most recently
+  const [boardChoice, setBoardChoice] = useState('')
+  const [newBoardName, setNewBoardName] = useState('')
+  const boards = useLiveQuery(() => db.boards.toArray())
+  const boardUse = useLiveQuery(() => db.boardUse.toArray())
+  const recent = boards && boardUse ? mostRecentBoard(boards, boardUse) : undefined
+  const boardList = boards && boardUse ? sortBoards(boards, boardUse, 'used') : []
+  // nothing to choose from yet: the first import makes the first board
+  const choice = boardList.length === 0 ? NEW_BOARD : boardChoice || recent?.id || NEW_BOARD
   const { requestUndo, dialog } = useUndo(() =>
     setResult({ message: '已撤销这次导入', notices: [], plain: true }),
   )
@@ -34,13 +53,24 @@ export function PastePanel() {
     resultRef.current?.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' })
   }, [result])
 
-  const submit = async () => {
-    if (busy || text.trim() === '') return
+  const send = async (text: string, target: BoardTarget | undefined, decided: boolean) => {
     setBusy(true)
     try {
-      const out = await runImport(text, kind)
-      setResult({ message: out.message, notices: out.notices, entry: out.entry, plain: !out.stored, similar: out.similar })
-      if (out.stored) setText('')
+      const out = await runImport(text, kind, { target, decided })
+      setResult({
+        message: out.message,
+        notices: out.notices,
+        entry: out.entry,
+        plain: !out.stored,
+        similar: out.similar,
+        needsBoard: out.needsBoard ? { ...out.needsBoard, text } : undefined,
+        board: out.stored ? out.board : undefined,
+      })
+      if (out.stored) {
+        setText('')
+        setNewBoardName('')
+        setBoardChoice('')
+      }
     } catch (err) {
       setResult({
         message: '没有放进去：保存时出了问题。内容还在输入框里，可以再试一次。',
@@ -50,6 +80,18 @@ export function PastePanel() {
     } finally {
       setBusy(false)
     }
+  }
+
+  const submit = () => {
+    if (busy || text.trim() === '') return
+    const target: BoardTarget = choice === NEW_BOARD ? { newName: newBoardName } : { id: choice }
+    void send(text, kind === 'research' ? target : undefined, false)
+  }
+
+  /** The answer to "which board?": make the one named in the Markdown, or use an existing one. */
+  const answerBoard = (target: BoardTarget) => {
+    if (!result?.needsBoard) return
+    void send(result.needsBoard.text, target, true)
   }
 
   const sameAsWant = async () => {
@@ -107,9 +149,32 @@ export function PastePanel() {
         />
       </label>
 
+      {kind === 'research' && (
+        <div className="panel-board">
+          <label>
+            <span>放到哪块画板</span>
+            <select value={choice} onChange={(e) => setBoardChoice(e.target.value)} disabled={boardList.length === 0}>
+              {boardList.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                  {b.id === recent?.id ? '（最近使用）' : ''}
+                </option>
+              ))}
+              <option value={NEW_BOARD}>＋ 新建一块画板</option>
+            </select>
+          </label>
+          {choice === NEW_BOARD && (
+            <label>
+              <span className="sr-only">新画板的名字</span>
+              <input value={newBoardName} onChange={(e) => setNewBoardName(e.target.value)} placeholder="新画板的名字" maxLength={40} />
+            </label>
+          )}
+        </div>
+      )}
+
       <div className="panel-row">
         <span className="panel-hint">
-          {kind === 'paper' ? '放进论文库，已有的会合并' : '放进那一天的画板'}
+          {kind === 'paper' ? '放进论文库，已有的会合并' : 'Markdown 里写了 board 就以它为准'}
         </span>
         <button
           type="button"
@@ -134,12 +199,35 @@ export function PastePanel() {
                 </ul>
               )}
             </div>
+            {result.board && !result.plain && (
+              <a className="btn" href={boardHref(result.board.id)}>
+                去看看
+              </a>
+            )}
             {result.entry && !result.plain && (
               <button type="button" className="btn" onClick={() => void requestUndo(result.entry!)}>
                 <IconUndo />
                 撤销
               </button>
             )}
+          </div>
+        )}
+        {result?.needsBoard && (
+          <div className="result is-question">
+            <p className="result-text">还没有叫「{result.needsBoard.name}」的画板。要放到哪里？</p>
+            <div className="result-choices">
+              <button type="button" className="btn" disabled={busy} onClick={() => answerBoard({ newName: result.needsBoard!.name })}>
+                新建「{result.needsBoard.name}」
+              </button>
+              {result.needsBoard.similar.map((b) => (
+                <button key={b.id} type="button" className="btn" disabled={busy} onClick={() => answerBoard({ id: b.id })}>
+                  放进「{b.name}」
+                </button>
+              ))}
+              <button type="button" className="btn btn-quiet" onClick={() => setResult(null)}>
+                先不放
+              </button>
+            </div>
           </div>
         )}
         {result?.similar && result.entry && (

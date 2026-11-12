@@ -1,4 +1,6 @@
-import { planImport, type ImportOutcome } from '../domain/importer'
+import { mostRecentBoard } from '../domain/boards'
+import { planImport, type BoardTarget, type ImportOutcome } from '../domain/importer'
+import { placeOnBoard } from './boardStore'
 import type { ImportEntry, ImportKind } from '../domain/types'
 import { planUndo, type UndoPlan } from '../domain/undo'
 import { applyChanges, db, newId, nowIso, todayLocal } from './db'
@@ -6,18 +8,34 @@ import { runLookups } from './lookup'
 import { ensureBoards } from './migration'
 import { mergeWant } from '../domain/mergeWant'
 
-export async function runImport(raw: string, kindHint: ImportKind): Promise<ImportOutcome> {
-  const [papers, types, blocks, imports] = await Promise.all([
+export interface ImportOptions {
+  /** The board picked in the paste panel (or a new one to make). */
+  target?: BoardTarget
+  /** True when `target` answers the "which board?" question, overriding the name in the Markdown. */
+  decided?: boolean
+}
+
+export async function runImport(raw: string, kindHint: ImportKind, options: ImportOptions = {}): Promise<ImportOutcome> {
+  const [papers, types, blocks, imports, boards, boardUse, placeOn] = await Promise.all([
     db.papers.toArray(),
     db.types.toArray(),
     db.blocks.toArray(),
     db.imports.toArray(),
+    db.boards.toArray(),
+    db.boardUse.toArray(),
+    placeOnBoard(),
   ])
+  // nothing picked: the board used most recently
+  const recent = mostRecentBoard(boards, boardUse)
   const outcome = planImport(raw, {
     papers,
     types,
     blocks,
     imports,
+    boards,
+    target: options.target ?? (recent ? { id: recent.id } : undefined),
+    decided: options.decided,
+    placeOn,
     today: todayLocal(),
     now: nowIso(),
     kindHint,

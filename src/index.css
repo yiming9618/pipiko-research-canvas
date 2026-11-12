@@ -3250,3 +3250,307 @@ select,
   flex-direction: column;
   gap: 10px;
 }
+
+.card-dialog-date {
+  margin-top: 10px;
+  max-width: 220px;
+}
+
+.card-date {
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.node.card.is-focus {
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+  animation: focus-pulse 1.6s var(--ease-out) 2;
+}
+
+@keyframes focus-pulse {
+  0%,
+  100% {
+    outline-offset: 4px;
+  }
+  50% {
+    outline-offset: 10px;
+  }
+}
+
+/* ── boards list ─────────────────────────────────────── */
+
+.page-wide {
+  width: min(1120px, 100%);
+}
+
+.boards-head {
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.boards-head .seg {
+  margin-left: auto;
+}
+
+.seg-small .btn {
+  min-height: var(--tap);
+  padding: 0 16px;
+  font-size: 14px;
+}
+
+.boards-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.boards-section > h2 {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.board-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 16px;
+}
+
+.board-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.board-tile-main {
+  min-height: 148px;
+  padding: 14px;
+  border: 1px solid #eedcdf;
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition:
+    border-color var(--fast) ease,
+    transform var(--fast) ease;
+}
+
+.board-tile-main:hover {
+  border-color: var(--accent);
+}
+
+.board-tile-main:active {
+  transform: scale(0.98);
+}
+
+.board-tile-name {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.board-tile-meta {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-soft);
+}
+
+.board-tile-move select {
+  min-height: var(--tap);
+  width: 100%;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 13px;
+  padding: 0 8px;
+}
+
+.new-named {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.new-named input {
+  min-height: var(--tap);
+  width: min(320px, 70vw);
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+}
+
+.pile-foot {
+  margin-top: 12px;
+}
+
+/* ── paste panel: which board ────────────────────────── */
+
+.panel-board {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel-board label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-soft);
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.panel-board label > span {
+  flex: none;
+}
+
+.panel-board select,
+.panel-board input {
+  min-height: var(--tap);
+  flex: 1;
+  min-width: 0;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+}
+
+.result-choices {
+  flex-wrap: wrap;
+}
+
+.result > .btn,
+.result > a.btn {
+  text-decoration: none;
+}
+
+/* ── time view: one day ──────────────────────────────── */
+
+.timepage .board-main {
+  overflow-y: auto;
+}
+
+.time-empty {
+  padding: 32px 20px;
+}
+
+.day-stage {
+  max-width: 860px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.day-reads {
+  position: static;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.day-board {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.day-board h2 {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.day-board h2 a {
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  color: var(--text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+}
+
+.day-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.day-card {
+  min-height: 96px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--c-bg, var(--surface));
+  color: var(--text);
+  text-decoration: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid transparent;
+  transition: border-color var(--fast) ease;
+}
+
+.day-card:hover {
+  border-color: var(--accent);
+}
+
+.day-card .card-kind {
+  color: var(--c-ink, var(--text-soft));
+}
+
+.day-card-text {
+  font-size: 15px;
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.day-card-board {
+  margin-top: auto;
+  font-size: 12px;
+  color: var(--c-ink, var(--text-soft));
+}
+
+.day-reads {
+  max-width: none;
+}
+
+/* four places in the navigation: a little tighter on a phone */
+@media (max-width: 420px) {
+  .topnav-links {
+    gap: 0;
+  }
+
+  .topnav-links a {
+    padding: 0 9px;
+  }
+}
+
+.day-board h2 a {
+  min-width: var(--tap);
+}

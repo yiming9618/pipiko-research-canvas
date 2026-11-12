@@ -1,6 +1,8 @@
 import { IconBack, IconForward } from '../../ui/icons'
 
 interface Props {
+  /** Where the year and month links lead. */
+  base?: string
   year: string
   /** "11" style month, when at month or day level. */
   month?: string
@@ -11,14 +13,14 @@ interface Props {
 }
 
 /** 2026 › 11 月 › 11/10. Every level above the current one is a link: the fallback for pinching. */
-export function Crumb({ year, month, date, prev, next }: Props) {
+export function Crumb({ base = '#/time', year, month, date, prev, next }: Props) {
   const monthLabel = month ? `${Number(month)} 月` : ''
   const dayLabel = date ? `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}` : ''
   return (
     <>
       <nav className="crumb" aria-label="时间位置">
         {month ? (
-          <a className="crumb-link" href={`#/board/${year}`}>
+          <a className="crumb-link" href={`${base}/${year}`}>
             {year}
           </a>
         ) : (
@@ -27,7 +29,7 @@ export function Crumb({ year, month, date, prev, next }: Props) {
         {month && <span aria-hidden="true">›</span>}
         {month &&
           (date ? (
-            <a className="crumb-link" href={`#/board/${year}-${month}`}>
+            <a className="crumb-link" href={`${base}/${year}-${month}`}>
               {monthLabel}
             </a>
           ) : (

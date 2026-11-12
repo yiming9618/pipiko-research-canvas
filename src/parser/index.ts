@@ -33,6 +33,8 @@ export interface ParsedResearch {
   keywords: string[]
   paper_dois: string[]
   preamble_md: string
+  /** Name of the board it asks to be put on (`board:`). Empty when not given. */
+  board: string
   cards: { kind: CardKind; heading: string; body_md: string }[]
   notices: string[]
 }
@@ -176,6 +178,8 @@ function parseResearch(
     keywords: splitList(data.keywords),
     paper_dois: splitList(data.papers).map(normalizeDoi).filter(Boolean),
     preamble_md: isEmptyBody(preamble) ? '' : preamble,
+    // the template's own placeholder is not a board name
+    board: /^画板名称|（可选/.test((data.board ?? '').trim()) ? '' : (data.board ?? '').trim(),
     cards,
     notices,
   }

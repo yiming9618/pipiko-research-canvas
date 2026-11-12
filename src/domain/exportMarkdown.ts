@@ -2,8 +2,10 @@
 // Pure: the same box and the same notebook always give the same text.
 
 import { candidatesFor, findCitations, matchCitation } from './citations'
+import { homeBoardId, recordBoardId } from './migrate'
 import { PAPER_PROMPT, RESEARCH_PROMPT } from './templates'
 import type {
+  Board,
   BoardItem,
   Card,
   Connector,
@@ -31,6 +33,7 @@ export interface ExportData {
   connectors: Connector[]
   strokes: Stroke[]
   piles: Pile[]
+  boards: Board[]
   imports: ImportEntry[]
 }
 
@@ -50,7 +53,17 @@ const oneLine = (text: string, max = 60) => {
   return flat.length > max ? flat.slice(0, max) + '…' : flat
 }
 
-export function buildExport(data: ExportData): string {
+/** Everything the converter reads, minus the discussion box itself. */
+export type NotebookData = Omit<ExportData, 'box' | 'items'>
+
+/** Restricts a board's export to chosen things (for "导出选中的"). Keys are as on the canvas: `card:<id>`, `cover:<id>`, `paper:<id>`, `item:<board item id>`, `stroke:<id>`. */
+export type Only = ReadonlySet<string>
+
+/**
+ * The shared converter. Papers written out in full and papers merely referred
+ * to are tracked across everything one export contains, so each appears once.
+ */
+function makeWriter(data: NotebookData) {
   const papers = live(data.papers)
   const paperById = new Map(papers.map((p) => [p.id, p]))
   const records = live(data.records)
@@ -58,6 +71,7 @@ export function buildExport(data: ExportData): string {
   const cards = live(data.cards)
   const cardById = new Map(cards.map((c) => [c.id, c]))
   const pileById = new Map(live(data.piles).map((p) => [p.id, p]))
+  const boardById = new Map(live(data.boards).map((b) => [b.id, b]))
   const typeById = new Map(live(data.types).map((t) => [t.id, t]))
   const boardItems = live(data.boardItems)
   const itemById = new Map(boardItems.map((i) => [i.id, i]))
@@ -69,11 +83,10 @@ export function buildExport(data: ExportData): string {
   const paperName = (p: Paper) => p.title || p.doi || p.url || '（没有标题）'
   const kindOf = (c: Card) => (c.kind === '其他' ? c.heading || '其他' : c.kind)
 
-  /** The wording as it reads on the day's board now. */
+  /** The wording as it reads on the card's own board now. */
   const cardText = (c: Card) => {
-    const edited = boardItems.find(
-      (i) => i.board_id === `day:${c.date}` && i.ref_type === 'card' && i.ref_id === c.id && i.text_override !== undefined,
-    )
+    const home = homeBoardId(c)
+    const edited = boardItems.find((i) => i.board_id === home && i.ref_type === 'card' && i.ref_id === c.id && i.text_override !== undefined)
     return (edited?.text_override ?? c.body_md).trim()
   }
 
@@ -87,31 +100,29 @@ export function buildExport(data: ExportData): string {
     }
   }
 
-  const cardLines = (c: Card): string[] => {
+  /** 【类型】日期 · 来自哪份记录, then the text. */
+  const cardLines = (c: Card, from?: string): string[] => {
     const text = cardText(c)
     noteCitations(c, text)
-    return [`【${kindOf(c)}】`, text, '']
+    const record = recordById.get(c.record_id)
+    const source = from ?? (record ? record.title || '（没有标题）' : '我写的')
+    return [`【${kindOf(c)}】${c.date} · ${source}`, text, '']
   }
 
-  const recordsOfDay = (date: string) =>
-    records
-      .filter((r) => r.date === date)
-      .sort((a, b) => {
-        const x = importedAt.get(a.import_id) ?? ''
-        const y = importedAt.get(b.import_id) ?? ''
-        return x < y ? -1 : x > y ? 1 : a.id < b.id ? -1 : 1
-      })
+  /** By the card's date; within a day, in the order of import, then as written. */
+  const byDate = (list: Card[]) =>
+    [...list].sort((a, b) => {
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1
+      const ra = recordById.get(a.record_id)
+      const rb = recordById.get(b.record_id)
+      const x = ra ? importedAt.get(ra.import_id) ?? '' : '~'
+      const y = rb ? importedAt.get(rb.import_id) ?? '' : '~'
+      if (x !== y) return x < y ? -1 : 1
+      return a.order - b.order || (a.id < b.id ? -1 : 1)
+    })
 
-  const recordLines = (r: ResearchRecord, heading: string): string[] => {
-    const out = [`${heading} ${r.title || '（没有标题）'}（${r.date}）`, '']
-    if (r.summary) out.push(`摘要：${r.summary}`, '')
-    if (r.preamble_md) out.push(r.preamble_md.trim(), '')
-    for (const c of cards.filter((x) => x.record_id === r.id).sort((a, b) => a.order - b.order)) out.push(...cardLines(c))
-    return out
-  }
-
-  /** A connector end → a short description of what it touches. */
-  const describeEnd = (key: string): string | null => {
+  /** A connector end → the canvas key of what it touches, and a short description. */
+  const end = (key: string): { key: string; text: string } | null => {
     let type: string
     let id: string
     let item: BoardItem | undefined
@@ -126,44 +137,24 @@ export function buildExport(data: ExportData): string {
     }
     if (type === 'card') {
       const c = cardById.get(id)
-      return c ? `【${kindOf(c)}】${oneLine(cardText(c))}` : null
+      return c ? { key: `card:${id}`, text: `【${kindOf(c)}】${oneLine(cardText(c))}` } : null
     }
     if (type === 'cover') {
       const r = recordById.get(id)
-      return r ? `【记录】${r.title}` : null
+      return r ? { key: `cover:${id}`, text: `【记录】${r.title}` } : null
     }
     if (type === 'paper') {
       const p = paperById.get(id)
-      return p ? `【论文】${paperName(p)}` : null
+      return p ? { key: `paper:${id}`, text: `【论文】${paperName(p)}` } : null
     }
     if (type === 'pile') {
       const p = pileById.get(id)
-      return p ? `【堆】${p.name}` : null
+      return p ? { key: `pile:${id}`, text: `【堆】${p.name}` } : null
     }
-    if (type === 'text') return item?.text_override ? `【文字】${oneLine(item.text_override)}` : null
-    if (type === 'image') return '[贴图]'
+    if (!item) return null
+    if (type === 'text') return item.text_override ? { key: `item:${item.id}`, text: `【文字】${oneLine(item.text_override)}` } : null
+    if (type === 'image') return { key: `item:${item.id}`, text: '[贴图]' }
     return null
-  }
-
-  const connectorLines = (boardId: string, only?: (c: Connector) => boolean): string[] => {
-    const out: string[] = []
-    for (const c of live(data.connectors).filter((x) => x.board_id === boardId).sort((a, b) => (a.id < b.id ? -1 : 1))) {
-      if (only && !only(c)) continue
-      const from = describeEnd(c.from)
-      const to = describeEnd(c.to)
-      if (from && to) out.push(`- ${from} ${c.arrow ? '→' : '—'} ${to}`)
-    }
-    return out
-  }
-
-  /** Free text, pasted images and drawings on a board. `when` is the date or the pile's name. */
-  const extrasOf = (boardId: string, when: string): string[] => {
-    const out: string[] = []
-    const own = boardItems.filter((i) => i.board_id === boardId).sort((a, b) => (a.id < b.id ? -1 : 1))
-    for (const i of own) if (i.ref_type === 'text' && i.text_override?.trim()) out.push(`【文字】${i.text_override.trim()}`)
-    for (const i of own) if (i.ref_type === 'image') out.push(`[贴图：${when}]`)
-    if (live(data.strokes).some((s) => s.board_id === boardId)) out.push(`[手绘图片：${when}]`)
-    return out
   }
 
   const paperLines = (p: Paper): string[] => {
@@ -189,136 +180,193 @@ export function buildExport(data: ExportData): string {
     return out
   }
 
-  const pileLines = (pile: Pile, depth: number, seen: Set<string>): string[] => {
-    const h = '#'.repeat(Math.min(depth, 6))
-    const out = [`${h} 堆：${pile.name}`, '']
-    if (seen.has(pile.id)) return [...out, '（这个堆在上面已经列过）', '']
-    seen.add(pile.id)
-    const boardId = `pile:${pile.id}`
-    const inside = boardItems
-      .filter((i) => i.board_id === boardId)
-      .sort((a, b) => (a.updated_at < b.updated_at ? -1 : a.updated_at > b.updated_at ? 1 : a.id < b.id ? -1 : 1))
-    const sub = '#'.repeat(Math.min(depth + 1, 6))
+  /**
+   * One board: its name, the records behind it, its cards by date, lines as
+   * text, placeholders for pictures and ink, and the papers shown on it.
+   * With `only`, just the chosen things, and only lines whose two ends are both chosen.
+   */
+  const boardLines = (boardId: string, heading: string, only?: Only): string[] => {
+    const board = boardById.get(boardId)
+    const name = board?.name ?? '（没有名字的画板）'
+    const out = [`${heading} 画板：${name}`, '']
+    const has = (key: string) => !only || only.has(key)
+    const onBoard = boardItems.filter((i) => i.board_id === boardId).sort((a, b) => (a.id < b.id ? -1 : 1))
 
-    for (const i of inside.filter((x) => x.ref_type === 'cover')) {
-      const r = recordById.get(i.ref_id)
-      if (r) out.push(...recordLines(r, sub))
+    const ownRecords = records
+      .filter((r) => recordBoardId(r) === boardId && has(`cover:${r.id}`))
+      .sort((a, b) => (a.date !== b.date ? (a.date < b.date ? -1 : 1) : (importedAt.get(a.import_id) ?? '') < (importedAt.get(b.import_id) ?? '') ? -1 : 1))
+    // when exporting everything, every record is named; when exporting a choice, only the chosen covers
+    const namedRecords = only ? ownRecords : records.filter((r) => recordBoardId(r) === boardId).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+    if (namedRecords.length > 0) {
+      out.push('研究记录：')
+      for (const r of namedRecords) out.push(`- ${r.date} · ${r.title || '（没有标题）'}${r.summary ? `：${r.summary}` : ''}`)
+      out.push('')
     }
-    const loose = inside.filter((x) => x.ref_type === 'card').map((x) => cardById.get(x.ref_id)).filter((c): c is Card => !!c)
-    for (const c of loose) {
-      const r = recordById.get(c.record_id)
-      out.push(`${c.date} · ${r ? r.title : '我在画板上写的'}`, ...cardLines(c))
+
+    const own = cards.filter((c) => homeBoardId(c) === boardId && has(`card:${c.id}`))
+    // cards and records from other boards that are shown here
+    const guests = onBoard
+      .filter((i) => i.ref_type === 'card' && has(`card:${i.ref_id}`))
+      .map((i) => cardById.get(i.ref_id))
+      .filter((c): c is Card => !!c && homeBoardId(c) !== boardId)
+    const guestRecords = onBoard
+      .filter((i) => i.ref_type === 'cover' && has(`cover:${i.ref_id}`))
+      .map((i) => recordById.get(i.ref_id))
+      .filter((r): r is ResearchRecord => !!r && recordBoardId(r) !== boardId)
+    for (const r of guestRecords) guests.push(...cards.filter((c) => c.record_id === r.id && !guests.includes(c)))
+
+    for (const c of byDate([...own, ...guests])) {
+      const guest = homeBoardId(c) !== boardId
+      const record = recordById.get(c.record_id)
+      const where = guest ? `来自画板「${boardById.get(homeBoardId(c))?.name ?? '另一块'}」` : undefined
+      out.push(...cardLines(c, where ? `${record ? record.title || '（没有标题）' : '我写的'}，${where}` : undefined))
     }
-    const inPile = inside.filter((x) => x.ref_type === 'paper').map((x) => paperById.get(x.ref_id)).filter((p): p is Paper => !!p)
-    if (inPile.length > 0) {
-      out.push('堆里的论文：')
-      for (const p of inPile) {
+
+    const shownPapers = onBoard
+      .filter((i) => i.ref_type === 'paper' && has(`paper:${i.ref_id}`))
+      .map((i) => paperById.get(i.ref_id))
+      .filter((p): p is Paper => !!p)
+    if (shownPapers.length > 0) {
+      out.push('画板上的论文：')
+      for (const p of shownPapers) {
         out.push(`- ${paperName(p)}`)
         if (!listed.has(p.id)) cited.set(p.id, p)
       }
       out.push('')
     }
-    const links = connectorLines(boardId)
-    if (links.length > 0) out.push('连线：', ...links, '')
-    const extras = extrasOf(boardId, pile.name)
-    if (extras.length > 0) out.push(...extras, '')
-    for (const i of inside.filter((x) => x.ref_type === 'pile')) {
-      const child = pileById.get(i.ref_id)
-      if (child) out.push(...pileLines(child, depth + 1, seen))
+
+    for (const i of onBoard) {
+      if (i.ref_type === 'pile') {
+        const pile = pileById.get(i.ref_id)
+        if (pile && !only) out.push(`（另见堆：${pile.name}）`, '')
+      }
     }
+
+    const links: string[] = []
+    for (const c of live(data.connectors).filter((x) => x.board_id === boardId).sort((a, b) => (a.id < b.id ? -1 : 1))) {
+      const from = end(c.from)
+      const to = end(c.to)
+      if (!from || !to || !has(from.key) || !has(to.key)) continue
+      links.push(`- ${from.text} ${c.arrow ? '→' : '—'} ${to.text}`)
+    }
+    if (links.length > 0) out.push('连线：', ...links, '')
+
+    const when = board ? board.created_at.slice(0, 10) : ''
+    const extras: string[] = []
+    for (const i of onBoard) if (i.ref_type === 'text' && i.text_override?.trim() && has(`item:${i.id}`)) extras.push(`【文字】${i.text_override.trim()}`)
+    for (const i of onBoard) if (i.ref_type === 'image' && has(`item:${i.id}`)) extras.push(`[贴图：${when}]`)
+    const ink = live(data.strokes).filter((x) => x.board_id === boardId && has(`stroke:${x.id}`))
+    if (ink.length > 0) extras.push(`[手绘图片：${when}]`)
+    if (extras.length > 0) out.push(...extras, '')
+
+    if (out.length === 2) out.push('（这块画板是空的）', '')
     return out
   }
 
-  // ── the box, by kind of thing, each in the order it was added
+  /** A pile: each of its boards in turn, oldest first. */
+  const pileLines = (pile: Pile, heading: string): string[] => {
+    const out = [`${heading} 堆：${pile.name}`, '']
+    const inside = live(data.boards)
+      .filter((b) => b.pile_id === pile.id)
+      .sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.id < b.id ? -1 : 1))
+    if (inside.length === 0) out.push('（这个堆是空的）', '')
+    for (const b of inside) out.push(...boardLines(b.id, `${heading}#`))
+    return out
+  }
+
+  /** Papers referred to along the way and not written out in full: title, authors, year, one line. Each once. */
+  const mentionedLines = (): string[] => {
+    const mentioned = [...cited.values()].filter((p) => !listed.has(p.id)).sort((a, b) => (paperName(a) < paperName(b) ? -1 : 1))
+    if (mentioned.length === 0) return []
+    const out = ['## 上面提到的论文', '']
+    for (const p of mentioned) {
+      const who = [p.authors[0] ? p.authors[0] + (p.authors.length > 1 ? ' 等' : '') : '', p.year ?? ''].filter(Boolean).join(', ')
+      out.push(`- **${paperName(p)}**${who ? `（${who}）` : ''}${p.one_liner ? `：${p.one_liner}` : ''}`)
+    }
+    out.push('')
+    return out
+  }
+
+  return { paperById, cardById, pileById, boardById, recordById, itemById, cardLines, byDate, end, paperLines, boardLines, pileLines, mentionedLines }
+}
+
+const TEMPLATES = [
+  '---',
+  '',
+  '讨论完之后，请按下面的模板整理，方便我放回研究笔记本。',
+  '',
+  '## 研究记录的模板',
+  '',
+  '````markdown',
+  RESEARCH_PROMPT.trim(),
+  '````',
+  '',
+  '## 论文的模板',
+  '',
+  '````markdown',
+  PAPER_PROMPT.trim(),
+  '````',
+  '',
+]
+
+const finish = (lines: string[]) => lines.join('\n').replace(/\n{3,}/g, '\n\n')
+
+/** "导出给 AI" for a discussion box. */
+export function buildExport(data: ExportData): string {
+  const w = makeWriter(data)
   const of = (type: DiscussionItem['ref_type']) => data.items.filter((i) => !i.deleted && i.ref_type === type)
-  const boxPapers = of('paper').map((i) => paperById.get(i.ref_id)).filter((p): p is Paper => !!p)
-  const boxCards = of('card').map((i) => cardById.get(i.ref_id)).filter((c): c is Card => !!c)
-  const boxDays = of('day').map((i) => i.ref_id)
-  const boxPiles = of('pile').map((i) => pileById.get(i.ref_id)).filter((p): p is Pile => !!p)
+  const boxPapers = of('paper').map((i) => w.paperById.get(i.ref_id)).filter((p): p is Paper => !!p)
+  const boxCards = of('card').map((i) => w.cardById.get(i.ref_id)).filter((c): c is Card => !!c)
+  // a "day" entry is the board that day became
+  const boxBoards = data.items
+    .filter((i) => !i.deleted && (i.ref_type === 'day' || i.ref_type === 'board'))
+    .map((i) => (i.ref_type === 'day' ? `day:${i.ref_id}` : i.ref_id))
+    .filter((id, n, all) => w.boardById.has(id) && all.indexOf(id) === n)
+  const boxPiles = of('pile').map((i) => w.pileById.get(i.ref_id)).filter((p): p is Pile => !!p)
 
   const body: string[] = []
-
   if (boxPapers.length > 0) {
     body.push('## 论文', '')
-    for (const p of boxPapers) body.push(...paperLines(p))
+    for (const p of boxPapers) body.push(...w.paperLines(p))
   }
 
   if (boxCards.length > 0) {
     body.push('## 研究卡片', '')
-    const byRecord = new Map<string, Card[]>()
-    for (const c of boxCards) byRecord.set(c.record_id, [...(byRecord.get(c.record_id) ?? []), c])
-    for (const [recordId, list] of byRecord) {
-      const r = recordById.get(recordId)
-      body.push(`### ${list[0].date} · ${r ? r.title || '（没有标题）' : '我在画板上写的'}`, '')
-      for (const c of list) body.push(...cardLines(c))
-    }
-    // lines drawn between two of the chosen cards
+    for (const c of w.byDate(boxCards)) body.push(...w.cardLines(c))
+    // lines drawn between two of the chosen cards, unless their whole board is listed below anyway
     const chosen = new Set(boxCards.map((c) => `card:${c.id}`))
-    const endKey = (key: string) => {
-      if (key.startsWith('card:')) return key
-      const item = itemById.get(key.replace(/^item:/, ''))
-      return item?.ref_type === 'card' ? `card:${item.ref_id}` : ''
-    }
     const links: string[] = []
-    for (const date of [...new Set(boxCards.map((c) => c.date))].sort()) {
-      if (boxDays.includes(date)) continue // listed with the whole board below
-      links.push(...connectorLines(`day:${date}`, (c) => chosen.has(endKey(c.from)) && chosen.has(endKey(c.to))))
+    for (const boardId of [...new Set(boxCards.map((c) => homeBoardId(c)))].sort()) {
+      if (boxBoards.includes(boardId)) continue
+      for (const c of live(data.connectors).filter((x) => x.board_id === boardId).sort((a, b) => (a.id < b.id ? -1 : 1))) {
+        const from = w.end(c.from)
+        const to = w.end(c.to)
+        if (from && to && chosen.has(from.key) && chosen.has(to.key)) links.push(`- ${from.text} ${c.arrow ? '→' : '—'} ${to.text}`)
+      }
     }
     if (links.length > 0) body.push('连线：', ...links, '')
   }
 
-  for (const date of boxDays) {
-    const dayRecords = recordsOfDay(date)
-    body.push(`## 画板：${date}`, '')
-    const byHand = cards.filter((c) => c.date === date && !recordById.has(c.record_id)).sort((a, b) => a.order - b.order)
-    if (dayRecords.length === 0 && byHand.length === 0) body.push('（这一天没有研究卡片）', '')
-    for (const r of dayRecords) body.push(...recordLines(r, '###'))
-    if (byHand.length > 0) {
-      body.push('### 我在画板上写的卡片', '')
-      for (const c of byHand) body.push(...cardLines(c))
-    }
-    const links = connectorLines(`day:${date}`)
-    if (links.length > 0) body.push('连线：', ...links, '')
-    const extras = extrasOf(`day:${date}`, date)
-    if (extras.length > 0) body.push(...extras, '')
-  }
+  for (const id of boxBoards) body.push(...w.boardLines(id, '##'))
+  for (const pile of boxPiles) body.push(...w.pileLines(pile, '##'))
+  body.push(...w.mentionedLines())
 
-  const seenPiles = new Set<string>()
-  for (const pile of boxPiles) body.push(...pileLines(pile, 2, seenPiles))
+  return finish([chooseIntro(data.items.filter((i) => !i.deleted)), '', `# ${data.box.name}`, '', ...body, ...TEMPLATES])
+}
 
-  const mentioned = [...cited.values()].filter((p) => !listed.has(p.id)).sort((a, b) => (paperName(a) < paperName(b) ? -1 : 1))
-  if (mentioned.length > 0) {
-    body.push('## 上面提到的论文', '')
-    for (const p of mentioned) {
-      const who = [p.authors[0] ? p.authors[0] + (p.authors.length > 1 ? ' 等' : '') : '', p.year ?? ''].filter(Boolean).join(', ')
-      body.push(`- **${paperName(p)}**${who ? `（${who}）` : ''}${p.one_liner ? `：${p.one_liner}` : ''}`)
-    }
-    body.push('')
-  }
+/** A whole board, or (with `only`) just the chosen things on it. */
+export function exportBoard(boardId: string, data: NotebookData, only?: Only): string {
+  const w = makeWriter(data)
+  const name = w.boardById.get(boardId)?.name ?? '画板'
+  const lines = w.boardLines(boardId, '##', only)
+  return finish([INTRO_RESEARCH, '', `# ${name}${only ? '（选中的部分）' : ''}`, '', ...lines.slice(2), ...w.mentionedLines(), ...TEMPLATES])
+}
 
-  return [
-    chooseIntro(data.items.filter((i) => !i.deleted)),
-    '',
-    `# ${data.box.name}`,
-    '',
-    ...body,
-    '---',
-    '',
-    '讨论完之后，请按下面的模板整理，方便我放回研究笔记本。',
-    '',
-    '## 研究记录的模板',
-    '',
-    '````markdown',
-    RESEARCH_PROMPT.trim(),
-    '````',
-    '',
-    '## 论文的模板',
-    '',
-    '````markdown',
-    PAPER_PROMPT.trim(),
-    '````',
-    '',
-  ]
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
+/** A whole pile: each board in turn under its name, the papers they refer to once at the end. */
+export function exportPile(pileId: string, data: NotebookData): string {
+  const w = makeWriter(data)
+  const pile = w.pileById.get(pileId)
+  if (!pile) return ''
+  const lines = w.pileLines(pile, '#')
+  return finish([INTRO_RESEARCH, '', ...lines, ...w.mentionedLines(), ...TEMPLATES])
 }

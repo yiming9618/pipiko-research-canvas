@@ -7,7 +7,7 @@ import { db, todayLocal } from '../../store/db'
 import { sampleImports } from '../../dev/samples'
 import { runImport } from '../../store/actions'
 import { saveType } from '../../store/paperActions'
-import { backupBeforeBoards, currentBoardCheck, deleteBackupBeforeBoards, lastMigrationReport } from '../../store/migration'
+import { backupBeforeBoards, currentBoardCheck, deleteBackupBeforeBoards, ensureBoards, lastMigrationReport } from '../../store/migration'
 import { IconDownload, IconUndo, IconUpload } from '../../ui/icons'
 import { TopNav } from '../../ui/TopNav'
 import { useUndo } from '../../ui/useUndo'
@@ -177,6 +177,8 @@ export function Settings() {
     if (!file) return
     try {
       const { added, total } = await importBackup(parseBackup(await file.text()))
+      // a backup from before subject boards brings daily boards and old piles: give them their boards
+      await ensureBoards()
       setBackup({
         text:
           added === 0

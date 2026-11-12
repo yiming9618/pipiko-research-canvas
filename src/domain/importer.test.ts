@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { builtinTypes, planImport, type ImportContext } from './importer'
-import type { Changes, Paper, TableName } from './types'
+import type { Board, Changes, Paper, TableName } from './types'
 
 /** A tiny in-memory store that applies the changes an import returns. */
 function makeStore() {
@@ -93,7 +93,7 @@ describe('导入研究记录', () => {
   it('生成卡片并给出结果提示', () => {
     const { tables, run } = makeStore()
     const out = run(researchMd('第一份'))
-    expect(out.message).toBe('生成了 3 张卡片，放进 11/10 的画板')
+    expect(out.message).toBe('生成了 3 张卡片，放进新画板「未命名画板」')
     expect(tables.records).toHaveLength(1)
     expect(tables.cards).toHaveLength(3)
     expect(tables.imports[0].raw_md).toBe(researchMd('第一份'))
@@ -124,7 +124,7 @@ describe('导入研究记录', () => {
   it('没有卡片时只有封面', () => {
     const { tables, run } = makeStore()
     const out = run(`---\ntype: research\ndate: 2026-11-10\ntitle: 空的\n---\n`)
-    expect(out.message).toBe('只有封面，放进 11/10 的画板')
+    expect(out.message).toBe('只有封面，放进新画板「未命名画板」')
     expect(tables.cards).toHaveLength(0)
   })
 })
@@ -324,5 +324,86 @@ describe('研究记录提到的论文、相似标题', () => {
     tables.papers.push(want({ title: 'living media interfaces paper', doi: '10.9/other' }))
     expect(run(paperMd(), 'paper').similar).toBeUndefined()
     expect(tables.papers).toHaveLength(2)
+  })
+})
+
+describe('研究记录放进哪块画板', () => {
+  const md = (board = '', date = '2026-11-10') =>
+    `---\ntype: research\ndate: ${date}\ntitle: 记录\n${board ? `board: ${board}\n` : ''}---\n## 发现\na\n## 问题\nb\n`
+  const board = (id: string, name: string, created = '2026-11-01T00:00:00.000Z'): Board => ({ id, name, created_at: created, updated_at: created })
+  const plan = (text: string, extra: Partial<ImportContext> = {}) => {
+    let n = 0
+    return planImport(text, {
+      papers: [], types: builtinTypes(), blocks: [], imports: [], today: '2026-11-11', now: '2026-11-11T10:00:00.000Z',
+      kindHint: 'research', newId: (p) => `${p}_${++n}`, ...extra,
+    })
+  }
+  const boards = [board('b1', '霉菌研究'), board('b2', '霉菌实验记录'), board('b3', '共在的理论框架')]
+
+  it('没写 board：放进面板上选的那块，记录和每张卡片都记下所属画板', () => {
+    const out = plan(md(), { boards, target: { id: 'b2' }, placeOn: () => ({ x: 780, y: 0 }) })
+    expect(out.stored).toBe(true)
+    expect(out.board).toEqual({ id: 'b2', name: '霉菌实验记录', created: false })
+    expect(out.changes.records![0]).toMatchObject({ board_id: 'b2', origin: { x: 780, y: 0 } })
+    expect(out.changes.cards!.every((c) => c.board_id === 'b2' && c.date === '2026-11-10')).toBe(true)
+    expect(out.changes.boards).toBeUndefined()
+    expect(out.changes.boardUse).toEqual([{ id: 'b2', last_used_at: '2026-11-11T10:00:00.000Z', updated_at: '2026-11-11T10:00:00.000Z' }])
+    expect(out.message).toBe('生成了 2 张卡片，放进画板「霉菌实验记录」')
+  })
+
+  it('面板上选了“新建”：建好画板再放进去', () => {
+    const out = plan(md(), { boards, target: { newName: '新的主题' } })
+    expect(out.changes.boards).toHaveLength(1)
+    expect(out.changes.boards![0]).toMatchObject({ name: '新的主题' })
+    expect(out.changes.records![0].board_id).toBe(out.changes.boards![0].id)
+    expect(out.board?.created).toBe(true)
+    expect(out.message).toContain('新画板「新的主题」')
+  })
+
+  it('写了 board 而且名称对上：以它为准，优先于面板上的选择（不看大小写、空格、标点）', () => {
+    const out = plan(md('霉菌研究'), { boards, target: { id: 'b3' }, placeOn: () => ({ x: 0, y: 0 }) })
+    expect(out.board?.id).toBe('b1')
+    expect(plan(md(' 霉菌 研究。'), { boards, target: { id: 'b3' } }).board?.id).toBe('b1')
+  })
+
+  it('写了 board 但对不上：什么都不存，问我是新建还是放进相近的，不自动猜', () => {
+    const out = plan(md('霉菌实验'), { boards, target: { id: 'b3' } })
+    expect(out.stored).toBe(false)
+    expect(out.changes).toEqual({})
+    expect(out.needsBoard?.name).toBe('霉菌实验')
+    // 「霉菌研究」只有“霉菌”两个字相同，不算相近
+    expect(out.needsBoard?.similar.map((b) => b.name)).toEqual(['霉菌实验记录'])
+  })
+
+  it('没有相近的画板：只问要不要新建', () => {
+    expect(plan(md('完全不同的名字'), { boards }).needsBoard).toEqual({ name: '完全不同的名字', similar: [] })
+  })
+
+  it('我回答之后：按我的回答放，不再问', () => {
+    const chosen = plan(md('霉菌实验'), { boards, target: { id: 'b2' }, decided: true })
+    expect(chosen.stored).toBe(true)
+    expect(chosen.board?.id).toBe('b2')
+    const created = plan(md('霉菌实验'), { boards, target: { newName: '霉菌实验' }, decided: true })
+    expect(created.changes.boards![0].name).toBe('霉菌实验')
+  })
+
+  it('模板里没改的那行 board 不算画板名', () => {
+    const out = plan(md('画板名称（可选，不确定就删掉这一行）'), { boards, target: { id: 'b1' } })
+    expect(out.stored).toBe(true)
+    expect(out.board?.id).toBe('b1')
+  })
+
+  it('同一份内容再粘贴一次仍然提示已导入，不会再问画板', () => {
+    const first = plan(md('霉菌研究'), { boards, target: { id: 'b1' } })
+    const again = plan(md('霉菌研究'), { boards, target: { id: 'b1' }, imports: [first.entry!] })
+    expect(again.stored).toBe(false)
+    expect(again.message).toContain('已经导入过了')
+  })
+
+  it('论文导入和画板无关', () => {
+    const out = plan('---\ntype: paper\ntitle: 一篇论文\ndate: 2026-11-10\n---\n## 一句话总结\n总结\n', { boards, kindHint: 'paper' })
+    expect(out.stored).toBe(true)
+    expect(out.board).toBeUndefined()
+    expect(out.changes.boards).toBeUndefined()
   })
 })

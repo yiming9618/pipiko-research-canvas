@@ -87,8 +87,8 @@ for (const size of sizes) {
   await page.screenshot({ path: `${out}/${size.name}-2-panel.png` })
 
   const small = await page.evaluate(() =>
-    [...document.querySelectorAll('button, a')]
-      .map((el) => ({ t: el.textContent.trim() || el.getAttribute('aria-label'), r: el.getBoundingClientRect() }))
+    [...document.querySelectorAll('button, a, .panel select, .panel input')]
+      .map((el) => ({ t: el.textContent.trim().slice(0, 12) || el.getAttribute('aria-label') || el.tagName, r: el.getBoundingClientRect() }))
       .filter((x) => x.r.width > 0 && (x.r.height < 44 || x.r.width < 44))
       .map((x) => `${x.t} ${Math.round(x.r.width)}×${Math.round(x.r.height)}`),
   )
@@ -100,10 +100,15 @@ for (const size of sizes) {
   check(`[${size.name}] 复制模板有反馈`, true, copied.trim())
 
   // import research
+  // no boards yet: the first import makes the first board
+  check(`[${size.name}] 还没有画板时，面板让我给新画板起名字`, await page.getByLabel('新画板的名字').isVisible())
+  await page.getByLabel('新画板的名字').fill('霉菌研究')
   await page.locator('.md-input').fill(RESEARCH)
   await page.getByRole('button', { name: '放进去' }).click()
-  await page.getByText('生成了 3 张卡片，放进 11/10 的画板').waitFor()
-  check(`[${size.name}] 导入研究记录`, true)
+  await page.getByText('生成了 3 张卡片，放进新画板「霉菌研究」').waitFor()
+  check(`[${size.name}] 导入研究记录，放进新建的画板`, true)
+  check(`[${size.name}] 结果里有去那块画板的入口`, (await page.getByRole('link', { name: '去看看' }).getAttribute('href')).startsWith('#/board/'))
+  check(`[${size.name}] 之后默认选中最近使用的画板`, (await page.getByLabel('放到哪块画板').locator('option:checked').innerText()).includes('霉菌研究（最近使用）'))
   await page.screenshot({ path: `${out}/${size.name}-3-result.png` })
 
   // same text again

@@ -6,6 +6,7 @@ import { parseMarkdown, type ParsedPaper, type ParsedResearch } from '../parser'
 import { SIMILAR_ENOUGH, titleSimilarity } from './similar'
 import {
   BUILTIN_TYPES,
+  type Board,
   DEFAULT_TYPE_COLOR,
   type Card,
   type Changes,
@@ -27,6 +28,17 @@ export interface ImportContext {
   types: HighlightType[]
   blocks: PaperBlock[]
   imports: ImportEntry[]
+  /** All boards (research imports go onto one). */
+  boards?: Board[]
+  /**
+   * Where a research import goes when its Markdown names no board: the board chosen in the
+   * paste panel, or a new one to make. Also the answer when the person was asked (`decided`).
+   */
+  target?: BoardTarget
+  /** True when `target` is the person's answer to the question in `needsBoard`: it then overrides `board:`. */
+  decided?: boolean
+  /** Where on a board the next import should be put down (to the side of what is there). */
+  placeOn?: (boardId: string) => { x: number; y: number }
   today: ISODate
   now: ISODateTime
   kindHint: ImportKind
@@ -42,6 +54,24 @@ export interface ImportOutcome {
   entry?: ImportEntry
   /** A paper import that matched nothing, but a "想看" entry has a similar title: ask before merging. */
   similar?: { paper_id: string; want_id: string; want_title: string }
+  /**
+   * The Markdown names a board (`board:`) that does not exist. Nothing was stored:
+   * the person chooses between making it and one of the closest existing boards.
+   */
+  needsBoard?: { name: string; similar: { id: string; name: string }[] }
+  /** The board a research import went onto. */
+  board?: { id: string; name: string; created: boolean }
+}
+
+export type BoardTarget = { id: string } | { newName: string }
+
+export const DEFAULT_BOARD_NAME = '未命名画板'
+
+/** Board names are compared without regard to case, spacing or punctuation. */
+export function findBoardByName(boards: Board[], name: string): Board | undefined {
+  const key = normalizeTitle(name)
+  if (!key) return undefined
+  return boards.filter((b) => !b.deleted).sort((a, b) => (a.created_at < b.created_at ? -1 : 1)).find((b) => normalizeTitle(b.name) === key)
 }
 
 /** Small stable string hash (cyrb53), used to spot an identical paste. */
@@ -116,6 +146,29 @@ export function planImport(raw: string, ctx: ImportContext): ImportOutcome {
   }
 
   const parsed = parseMarkdown(raw, { today: ctx.today, kindHint: ctx.kindHint })
+
+  // Which board? A name written in the Markdown comes first; it is matched exactly or asked about, never guessed.
+  let target = ctx.target
+  if (parsed.kind === 'research' && parsed.board && !ctx.decided) {
+    const named = findBoardByName(ctx.boards ?? [], parsed.board)
+    if (named) target = { id: named.id }
+    else {
+      const similar = (ctx.boards ?? [])
+        .filter((b) => !b.deleted)
+        .map((b) => ({ b, score: titleSimilarity(b.name, parsed.board) }))
+        .filter((x) => x.score >= 0.4)
+        .sort((x, y) => y.score - x.score || (x.b.id < y.b.id ? -1 : 1))
+        .slice(0, 3)
+        .map((x) => ({ id: x.b.id, name: x.b.name }))
+      return {
+        stored: false,
+        message: `Markdown 里写的画板「${parsed.board}」还没有`,
+        notices: parsed.notices,
+        changes: {},
+        needsBoard: { name: parsed.board, similar },
+      }
+    }
+  }
   const entry: ImportEntry = {
     id: ctx.newId('imp'),
     kind: parsed.kind,
@@ -128,19 +181,41 @@ export function planImport(raw: string, ctx: ImportContext): ImportOutcome {
     updated_at: ctx.now,
   }
   let similar: ImportOutcome['similar']
+  let board: ImportOutcome['board']
   let changes: Changes
   if (parsed.kind === 'paper') {
     const out = importPaper(parsed, entry, ctx)
     changes = out.changes
     similar = out.similar
   } else {
-    changes = importResearch(parsed, entry, ctx)
+    const out = importResearch(parsed, entry, ctx, target)
+    changes = out.changes
+    board = out.board
   }
   changes.imports = [entry]
-  return { stored: true, message: entry.message, notices: parsed.notices, changes, entry, similar }
+  return { stored: true, message: entry.message, notices: parsed.notices, changes, entry, similar, board }
 }
 
-function importResearch(parsed: ParsedResearch, entry: ImportEntry, ctx: ImportContext): Changes {
+function importResearch(
+  parsed: ParsedResearch,
+  entry: ImportEntry,
+  ctx: ImportContext,
+  target: BoardTarget | undefined,
+): { changes: Changes; board: NonNullable<ImportOutcome['board']> } {
+  // The board: an existing one, or a new one made now.
+  const existing = target && 'id' in target ? (ctx.boards ?? []).find((b) => b.id === target.id && !b.deleted) : undefined
+  const made: Board | undefined = existing
+    ? undefined
+    : {
+        id: ctx.newId('board'),
+        name: (target && 'newName' in target ? target.newName.trim() : '') || DEFAULT_BOARD_NAME,
+        created_at: ctx.now,
+        updated_at: ctx.now,
+      }
+  const onBoard = (existing ?? made)!
+  // New content goes down beside what is already there; nothing that is placed gets moved.
+  const origin = existing && ctx.placeOn ? ctx.placeOn(existing.id) : { x: 0, y: 0 }
+
   const record: ResearchRecord = {
     id: ctx.newId('rec'),
     date: parsed.date,
@@ -151,6 +226,8 @@ function importResearch(parsed: ParsedResearch, entry: ImportEntry, ctx: ImportC
     paper_dois: parsed.paper_dois,
     preamble_md: parsed.preamble_md,
     import_id: entry.id,
+    board_id: onBoard.id,
+    origin,
     updated_at: ctx.now,
   }
   const cards: Card[] = parsed.cards.map((c, i) => ({
@@ -162,12 +239,13 @@ function importResearch(parsed: ParsedResearch, entry: ImportEntry, ctx: ImportC
     body_md: c.body_md,
     order: i,
     import_id: entry.id,
+    board_id: onBoard.id,
     updated_at: ctx.now,
   }))
   entry.record_id = record.id
-  const where = `${shortDate(parsed.date)} 的画板`
+  const where = made ? `新画板「${onBoard.name}」` : `画板「${onBoard.name}」`
   entry.message =
-    cards.length > 0 ? `生成了 ${cards.length} 张卡片，放进 ${where}` : `只有封面，放进 ${where}`
+    cards.length > 0 ? `生成了 ${cards.length} 张卡片，放进${where}` : `只有封面，放进${where}`
 
   // Papers the record names that the library does not have go to "想看", marked as mentioned by the AI.
   const papers: Paper[] = []
@@ -209,7 +287,16 @@ function importResearch(parsed: ParsedResearch, entry: ImportEntry, ctx: ImportC
     entry.message += `；提到的 ${created.length} 篇论文库里没有，已加进"想看"`
   }
   if (mentioned.length > 0) entry.mentions_added = mentioned
-  return { records: [record], cards, ...(papers.length > 0 ? { papers } : {}) }
+  return {
+    changes: {
+      records: [record],
+      cards,
+      ...(papers.length > 0 ? { papers } : {}),
+      ...(made ? { boards: [made] } : {}),
+      boardUse: [{ id: onBoard.id, last_used_at: ctx.now, updated_at: ctx.now }],
+    },
+    board: { id: onBoard.id, name: onBoard.name, created: !!made },
+  }
 }
 
 function importPaper(

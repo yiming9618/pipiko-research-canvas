@@ -4,35 +4,34 @@
 
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { boardHref } from '../../domain/boards'
 import { candidatesFor, linkCitations } from '../../domain/citations'
 import { shortDate } from '../../domain/importer'
-import { CARD_W, cardKey, coverKey, defaultLayout } from '../../domain/layout'
-import { REF_TYPES, countContents, pileBoardId } from '../../domain/piles'
-import { isManualCard, type Asset, type BoardItem, type BoardRefType, type Card, type Paper, type Pile, type ResearchRecord } from '../../domain/types'
+import { CARD_W, boardLayout, cardKey, coverKey } from '../../domain/layout'
+import { homeBoardId, recordBoardId } from '../../domain/migrate'
+import { isManualCard, type Asset, type Board, type BoardItem, type BoardRefType, type Card, type ResearchRecord } from '../../domain/types'
 import {
   addConnector,
   addImageItem,
   addManualCard,
-  deleteManualCard,
-  saveManualCard,
+  addRefToBoard,
   addStroke,
   addTextItem,
+  deleteManualCard,
   patchConnector,
   patchItem,
   removeItem,
   removeStroke,
+  saveManualCard,
 } from '../../store/boardActions'
-import { db } from '../../store/db'
-import { ADD_MESSAGE, DRAG_TYPE, addToPile, createPile, deletePile, readDrag, renamePile } from '../../store/pileActions'
+import { boardCounts, deleteBoard, renameBoard, touchBoard } from '../../store/boardStore'
+import { db, localChangeListeners, todayLocal } from '../../store/db'
+import { DRAG_TYPE, readDrag } from '../../ui/drag'
 import { IconBack, IconCheck, IconHand, IconImage, IconLink, IconPen, IconPlus, IconText } from '../../ui/icons'
 import { fileToImage } from '../../ui/image'
 import { Markdown } from '../../ui/Markdown'
-import { AddToPile } from '../piles/AddToPile'
 import { AddToDiscussion } from '../discussions/AddToDiscussion'
-import { countLabel } from '../piles/PileShelf'
-import { Crumb } from '../time/Crumb'
-import { KIND_COLOR } from '../time/MonthView'
-import { useStageAnimation } from '../time/zoom'
+import { KIND_COLOR } from '../../domain/colors'
 import { Canvas, DEFAULT_INK_SIZE, type CanvasApi, type CanvasNode, type Selection, type Tool } from './Canvas'
 import { CardDialog } from './CardDialog'
 import { CitePopover, Cover, RawDialog, TextBox, ToolButton, useNarrow } from './parts'
@@ -44,14 +43,17 @@ function estimate(text: string): number {
   return 70 + Math.ceil(text.length / 20) * 26
 }
 
-type Props = { kind: 'day'; date: string; days: string[] } | { kind: 'pile'; pileId: string }
+interface Props {
+  boardId: string
+  /** A card to bring into view and highlight (coming from the time view or a search result). */
+  focus?: string
+}
 
-export function BoardView(props: Props) {
-  const isDay = props.kind === 'day'
-  const date = props.kind === 'day' ? props.date : ''
-  const pileId = props.kind === 'pile' ? props.pileId : ''
-  const boardId = isDay ? `day:${date}` : pileBoardId(pileId)
+/** One subject board: its own records and cards, plus pointers to papers and to cards from other boards. */
+export function BoardView({ boardId, focus }: Props) {
   const narrow = useNarrow()
+  const board = useLiveQuery(() => db.boards.get(boardId).then((b) => b ?? null), [boardId])
+  const boards = useLiveQuery(() => db.boards.filter((b) => !b.deleted).toArray())
 
   // ── what is arranged on this board ───────────────────────────────────
   const items = useLiveQuery(
@@ -68,38 +70,31 @@ export function BoardView(props: Props) {
   )
   const papers = useLiveQuery(() => db.papers.filter((p) => !p.deleted).toArray())
   const piles = useLiveQuery(() => db.piles.filter((p) => !p.deleted).sortBy('created_at'))
-  const pileItems = useLiveQuery(() => db.boardItems.filter((i) => !i.deleted && i.board_id.startsWith('pile:')).toArray())
   const assets = useLiveQuery(async () => {
     const ids = (items ?? []).filter((i) => i.ref_type === 'image').map((i) => i.ref_id)
     const rows = await db.assets.bulkGet(ids)
     return new Map(rows.filter((a): a is Asset => !!a).map((a) => [a.id, a]))
   }, [items])
 
-  // ── the originals: a day's own records, or whatever a pile points at ──
+  // ── what lives on this board, and the originals of anything it points at ──
   const source = useLiveQuery(async () => {
-    if (isDay) {
-      const [records, cards] = await Promise.all([
-        db.records.where('date').equals(date).filter((r) => !r.deleted).toArray(),
-        db.cards.where('date').equals(date).filter((c) => !c.deleted).toArray(),
-      ])
-      return { records, cards }
-    }
-    const refs = (items ?? []).filter((i) => i.ref_type === 'card' || i.ref_type === 'cover')
-    const cards = (await db.cards.bulkGet(refs.filter((i) => i.ref_type === 'card').map((i) => i.ref_id))).filter(
-      (c): c is Card => !!c && !c.deleted,
-    )
-    const recordIds = new Set([...cards.map((c) => c.record_id), ...refs.filter((i) => i.ref_type === 'cover').map((i) => i.ref_id)])
-    const records = (await db.records.bulkGet([...recordIds])).filter((r): r is ResearchRecord => !!r && !r.deleted)
-    return { records, cards }
-  }, [isDay, date, items])
+    const [allRecords, allCards] = await Promise.all([
+      db.records.filter((r) => !r.deleted).toArray(),
+      db.cards.filter((c) => !c.deleted).toArray(),
+    ])
+    const records = allRecords.filter((r) => recordBoardId(r) === boardId)
+    const cards = allCards.filter((c) => homeBoardId(c) === boardId)
+    const refCards = new Set((items ?? []).filter((i) => i.ref_type === 'card').map((i) => i.ref_id))
+    const refCovers = new Set((items ?? []).filter((i) => i.ref_type === 'cover').map((i) => i.ref_id))
+    const guestCards = allCards.filter((c) => refCards.has(c.id) && homeBoardId(c) !== boardId)
+    const guestRecordIds = new Set([...guestCards.map((c) => c.record_id), ...refCovers])
+    const guestRecords = allRecords.filter((r) => guestRecordIds.has(r.id) && recordBoardId(r) !== boardId)
+    return { records, cards, guestCards, guestRecords }
+  }, [boardId, items])
   const records = source?.records
   const cards = source?.cards
 
-  const paperImports = useLiveQuery(() =>
-    db.imports.filter((e) => e.kind === 'paper' && !e.undone && !e.deleted).toArray(),
-  )
   const importOrder = useLiveQuery(async () => new Map((await db.imports.toArray()).map((e) => [e.id, e.imported_at])))
-  const pile = useLiveQuery(() => (pileId ? db.piles.get(pileId) : undefined), [pileId])
 
   const [editing, setEditing] = useState(false)
   const [tool, setTool] = useState<Tool>('move')
@@ -110,7 +105,7 @@ export function BoardView(props: Props) {
   const [rawOf, setRawOf] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null)
   const [dropping, setDropping] = useState(false)
-  /** Cards being chosen for a discussion box (days only). null = not choosing. */
+  /** Cards being chosen for a discussion box. null = not choosing. */
   const [picked, setPicked] = useState<string[] | null>(null)
   /** The card dialog: writing a new card, or changing a hand-written one. */
   const [cardDialog, setCardDialog] = useState<{ card?: Card } | null>(null)
@@ -130,14 +125,23 @@ export function BoardView(props: Props) {
 
   const canEdit = !narrow
   const isEditing = editing && canEdit && picked === null
-  const canPick = isDay && canEdit
+  const canPick = canEdit
 
   const onMeasure = useCallback((key: string, h: number) => {
     setHeights((prev) => (prev[key] === h ? prev : { ...prev, [key]: h }))
   }, [])
 
-  const recordById = useMemo(() => new Map((records ?? []).map((r) => [r.id, r])), [records])
-  const cardById = useMemo(() => new Map((cards ?? []).map((c) => [c.id, c])), [cards])
+  // looked up by id: this board's own, and the originals of what it points at
+  const recordById = useMemo(() => new Map([...(records ?? []), ...(source?.guestRecords ?? [])].map((r) => [r.id, r])), [records, source])
+  const cardById = useMemo(() => new Map([...(cards ?? []), ...(source?.guestCards ?? [])].map((c) => [c.id, c])), [cards, source])
+  const isHome = useCallback(
+    (key: string) => {
+      if (key.startsWith('card:')) return (cards ?? []).some((c) => c.id === key.slice(5))
+      if (key.startsWith('cover:')) return (records ?? []).some((r) => r.id === key.slice(6))
+      return false
+    },
+    [cards, records],
+  )
 
   const sortedRecords = useMemo(
     () =>
@@ -155,14 +159,14 @@ export function BoardView(props: Props) {
 
   /** Cards written by hand on this day: they belong to no record. */
   const manualCards = useMemo(
-    () => (isDay ? (cards ?? []).filter(isManualCard).sort((a, b) => a.order - b.order || (a.id < b.id ? -1 : 1)) : []),
-    [isDay, cards],
+    () => (cards ?? []).filter(isManualCard).sort((a, b) => a.order - b.order || (a.id < b.id ? -1 : 1)),
+    [cards],
   )
 
   /** Rows for things that are references (not images or free text), by "type:id". */
   const itemByRef = useMemo(() => {
     const map = new Map<string, BoardItem>()
-    for (const i of items ?? []) if (REF_TYPES.includes(i.ref_type)) map.set(`${i.ref_type}:${i.ref_id}`, i)
+    for (const i of items ?? []) if (i.ref_type !== 'image' && i.ref_type !== 'text') map.set(`${i.ref_type}:${i.ref_id}`, i)
     return map
   }, [items])
 
@@ -171,18 +175,20 @@ export function BoardView(props: Props) {
   const columns = narrow && !edited ? 1 : 2
 
   const layout = useMemo(() => {
-    if (!isDay) return new Map<string, { x: number; y: number; w: number }>()
-    return defaultLayout(
-      sortedRecords.map((r) => ({ id: r.id, cardIds: (cardsOf.get(r.id) ?? []).map((c) => c.id) })),
-      (key) => {
+    const block = (r: ResearchRecord) => ({ id: r.id, cardIds: (cardsOf.get(r.id) ?? []).map((c) => c.id) })
+    return boardLayout({
+      // records from the time of daily boards keep their old stacked arrangement
+      stacked: sortedRecords.filter((r) => !r.origin).map(block),
+      loose: manualCards.map((c) => c.id),
+      placed: sortedRecords.filter((r) => r.origin).map((r) => ({ ...block(r), origin: r.origin! })),
+      heightOf: (key: string) => {
         if (heights[key]) return heights[key]
         if (key.startsWith('card:')) return estimate(cardById.get(key.slice(5))?.body_md ?? '')
         return 130
       },
       columns,
-      manualCards.map((c) => c.id),
-    )
-  }, [isDay, sortedRecords, cardsOf, heights, cardById, columns, manualCards])
+    })
+  }, [sortedRecords, cardsOf, heights, cardById, columns, manualCards])
 
   const saveText = useCallback(
     async (key: string, text: string) => {
@@ -215,11 +221,13 @@ export function BoardView(props: Props) {
     const out: CanvasNode[] = []
     const base = { movable: true, resizable: true }
 
-    const cardNode = (card: Card, at: { x: number; y: number; w: number }, item: BoardItem | undefined): CanvasNode => {
+    const boardName = (id: string) => boards?.find((b) => b.id === id)?.name ?? '另一块画板'
+    // `guest` = it lives on another board and is only shown here
+    const cardNode = (card: Card, at: { x: number; y: number; w: number }, item: BoardItem | undefined, guest = false): CanvasNode => {
       const key = cardKey(card.id)
       const record = recordById.get(card.record_id)
       const candidates = candidatesFor(record?.paper_dois ?? [], papers ?? [])
-      const text = (isDay ? item?.text_override : undefined) ?? card.body_md
+      const text = (guest ? undefined : item?.text_override) ?? card.body_md
       return {
         ...base,
         key,
@@ -227,16 +235,17 @@ export function BoardView(props: Props) {
         y: at.y,
         w: at.w,
         z: item?.z ?? 0,
-        className: 'card',
+        className: `card${focus === card.id ? ' is-focus' : ''}`,
         color: KIND_COLOR[card.kind],
         content: (
           <>
             <p className="card-kind">
               {card.kind === '其他' ? card.heading : card.kind}
-              {isDay && item?.text_override !== undefined && <span className="block-edited">改过</span>}
-              {!isDay && (
-                <a className="card-source" href={`#/board/${card.date}`}>
-                  来自 {shortDate(card.date)}
+              {!guest && item?.text_override !== undefined && <span className="block-edited">改过</span>}
+              <span className="card-date">{shortDate(card.date)}</span>
+              {guest && (
+                <a className="card-source" href={boardHref(homeBoardId(card), card.id)}>
+                  来自「{boardName(homeBoardId(card))}」
                 </a>
               )}
             </p>
@@ -249,7 +258,7 @@ export function BoardView(props: Props) {
         ),
       }
     }
-    const coverNode = (record: ResearchRecord, at: { x: number; y: number; w: number }, item: BoardItem | undefined): CanvasNode => ({
+    const coverNode = (record: ResearchRecord, at: { x: number; y: number; w: number }, item: BoardItem | undefined, guest = false): CanvasNode => ({
       ...base,
       key: coverKey(record.id),
       x: at.x,
@@ -259,9 +268,9 @@ export function BoardView(props: Props) {
       className: 'cover',
       content: (
         <>
-          {!isDay && (
-            <a className="card-source" href={`#/board/${record.date}`}>
-              来自 {shortDate(record.date)}
+          {guest && (
+            <a className="card-source" href={boardHref(recordBoardId(record))}>
+              来自「{boardName(recordBoardId(record))}」
             </a>
           )}
           <Cover record={record} onRaw={() => setRawOf(record.import_id)} />
@@ -277,10 +286,10 @@ export function BoardView(props: Props) {
       w: item.w,
       z: item.z,
       className: 'ghost',
-      content: <p>原件已经不在了（可能撤销了那次导入，或删掉了那个堆）。</p>,
+      content: <p>原件已经不在了（可能撤销了那次导入，或删掉了它所在的画板）。</p>,
     })
 
-    if (isDay) {
+    {
       for (const record of sortedRecords) {
         const coverItem = itemByRef.get(coverKey(record.id))
         const coverAt = coverItem ?? layout.get(coverKey(record.id))
@@ -332,14 +341,16 @@ export function BoardView(props: Props) {
               <Markdown text={item.text_override || '（空）'} />
             ),
         })
-      } else if (!isDay && source) {
-        // A pile's own contents: references, each drawn from its original.
+      } else if (source) {
+        // Pointers: each is drawn from its original, which lives somewhere else.
         if (item.ref_type === 'card') {
           const card = cardById.get(item.ref_id)
-          out.push(card ? cardNode(card, item, item) : gone(item))
+          if (card && homeBoardId(card) === boardId) continue // one of this board's own: drawn above, this row is its saved place
+          out.push(card ? cardNode(card, item, item, true) : gone(item))
         } else if (item.ref_type === 'cover') {
           const record = recordById.get(item.ref_id)
-          out.push(record ? coverNode(record, item, item) : gone(item))
+          if (record && recordBoardId(record) === boardId) continue
+          out.push(record ? coverNode(record, item, item, true) : gone(item))
         } else if (item.ref_type === 'paper') {
           const paper = papers?.find((p) => p.id === item.ref_id)
           if (!paper && papers === undefined) continue
@@ -381,11 +392,12 @@ export function BoardView(props: Props) {
                   z: item.z,
                   className: 'subpile',
                   content: (
+                    // from before piles became folders: a pile that was placed inside this one. Now a way over to it.
                     <a className="pile-tile" href={`#/pile/${sub.id}`} data-color="pink">
                       <span className="pile-back" aria-hidden="true" />
                       <span className="pile-front">
                         <span className="pile-name">{sub.name}</span>
-                        <span className="pile-count">{countLabel(countContents(sub.id, pileItems ?? []))}</span>
+                        <span className="pile-count">打开这个堆</span>
                       </span>
                     </a>
                   ),
@@ -397,7 +409,7 @@ export function BoardView(props: Props) {
     }
     // Untouched cards keep their order; anything moved is drawn above them, most recent on top.
     return out.sort((a, b) => (a.z ?? 0) - (b.z ?? 0))
-  }, [isDay, sortedRecords, papers, itemByRef, layout, cardsOf, manualCards, items, assets, typingKey, saveText, recordById, cardById, piles, pileItems, source])
+  }, [sortedRecords, papers, itemByRef, layout, cardsOf, manualCards, items, assets, typingKey, saveText, recordById, cardById, piles, source, boards, boardId, focus])
 
   const topZ = (items ?? []).reduce((max, i) => Math.max(max, i.z), 0) + 1
 
@@ -426,16 +438,14 @@ export function BoardView(props: Props) {
   const selectedItem = selection?.kind === 'node' ? resolve(selection.id) : null
   const selectedLink = selection?.kind === 'link' ? connectors?.find((c) => c.id === selection.id) : undefined
   const selectedStroke = selection?.kind === 'stroke' ? strokes?.find((s) => s.id === selection.id) : undefined
-  const selectedIsRef = !!selectedItem && REF_TYPES.includes(selectedItem.ref.type)
-
-  /** Deletes what was added to this board. On a day, the day's own cards cannot be deleted here. */
+  /** Removes what was put on this board: text, pictures, lines, ink, and pointers to things from elsewhere. Imported cards of this board are not deleted here. */
   const deleteSelection = useCallback(() => {
     if (selectedLink) void patchConnector(selectedLink, { deleted: true })
     else if (selectedStroke) void removeStroke(selectedStroke)
-    else if (selectedItem?.existing && (selection?.id.startsWith('item:') || !isDay)) void removeItem(selectedItem.existing)
+    else if (selectedItem?.existing && selection && (selection.id.startsWith('item:') || !isHome(selection.id))) void removeItem(selectedItem.existing)
     else return
     setSelection(null)
-  }, [selectedLink, selectedStroke, selectedItem, selection, isDay])
+  }, [selectedLink, selectedStroke, selectedItem, selection, isHome])
 
   useEffect(() => {
     if (!isEditing) return
@@ -461,10 +471,11 @@ export function BoardView(props: Props) {
     if (selection?.kind === 'node' && selectedItem) {
       const key = selection.id
       const isOwn = key.startsWith('item:')
-      if ((isDay && key.startsWith('card:')) || selectedItem.ref.type === 'text') {
+      const home = isHome(key)
+      if ((home && key.startsWith('card:')) || selectedItem.ref.type === 'text') {
         buttons.push(quiet('改文字', () => setTypingKey(key)))
       }
-      if (isDay && !isOwn && selectedItem.existing) {
+      if (home && selectedItem.existing) {
         buttons.push(
           quiet('恢复原样', () => {
             void removeItem(selectedItem.existing!)
@@ -472,8 +483,9 @@ export function BoardView(props: Props) {
           }),
         )
       }
-      const manual = isDay && key.startsWith('card:') ? cardById.get(key.slice(5)) : undefined
+      const manual = home && key.startsWith('card:') ? cardById.get(key.slice(5)) : undefined
       if (manual && isManualCard(manual)) {
+        buttons.push(quiet('日期和类型', () => setCardDialog({ card: manual })))
         buttons.push(
           quiet(
             '删除',
@@ -487,7 +499,7 @@ export function BoardView(props: Props) {
           ),
         )
       }
-      if (!isDay && !isOwn) buttons.push(quiet('移出这个堆', deleteSelection))
+      if (!home && !isOwn) buttons.push(quiet('移出这块画板', deleteSelection))
       if (isOwn) buttons.push(quiet('删除', deleteSelection, true))
     } else if (selectedLink) {
       buttons.push(quiet(selectedLink.arrow ? '去掉箭头' : '加上箭头', () => void patchConnector(selectedLink, { arrow: !selectedLink.arrow })))
@@ -497,29 +509,6 @@ export function BoardView(props: Props) {
     }
     if (buttons.length > 0) actions = buttons
   }
-
-  // ── putting a card of this day into a pile ───────────────────────────
-  const dropInto = async (target: Pile | 'new', ref: { type: BoardRefType; id: string }) => {
-    const into = target === 'new' ? await createPile('新的堆') : target
-    say(ADD_MESSAGE[await addToPile(into.id, ref)](into.name))
-  }
-  const showDock = isDay && isEditing && tool === 'move' && selectedIsRef && !typingKey
-
-  // ── "读了 / 重读了" markers (days only) ────────────────────────────────
-  const markers = useMemo(() => {
-    const out: { paper: Paper; again: boolean }[] = []
-    if (!isDay) return out
-    const seen = new Set<string>()
-    for (const e of paperImports ?? []) {
-      if (e.date !== date || !e.paper_id || seen.has(e.paper_id)) continue
-      const paper = papers?.find((p) => p.id === e.paper_id)
-      if (!paper) continue
-      seen.add(e.paper_id)
-      const again = (paperImports ?? []).some((o) => o.paper_id === e.paper_id && o.date < date)
-      out.push({ paper, again })
-    }
-    return out
-  }, [isDay, paperImports, papers, date])
 
   // ── choosing cards for a discussion box: long press (touch), right click (mouse), or the "选卡片" button
   const cardKeyAt = (target: EventTarget | null) => {
@@ -581,22 +570,22 @@ export function BoardView(props: Props) {
       }
     : {}
 
-  const saveCard = async (kind: Exclude<Card['kind'], '其他'>, text: string) => {
+  const saveCard = async (kind: Exclude<Card['kind'], '其他'>, text: string, date: string) => {
     const editingCard = cardDialog?.card
     setCardDialog(null)
     if (editingCard) {
-      await saveManualCard(editingCard, { kind, text })
+      await saveManualCard(editingCard, { kind, text, date })
       return
     }
     // On a wide screen the new card lands in the middle of what is in view, on top.
     // On a phone it takes the next template spot, so an untouched day stays one column.
     const c = !narrow ? api.current?.center() : undefined
-    await addManualCard(date, kind, text, c ? { x: c.x - CARD_W / 2, y: c.y - 60, w: CARD_W, z: topZ } : undefined)
+    await addManualCard(boardId, date, kind, text, c ? { x: c.x - CARD_W / 2, y: c.y - 60, w: CARD_W, z: topZ } : undefined)
   }
 
   const onClick = (e: MouseEvent) => {
     const cite = (e.target as HTMLElement).closest<HTMLAnchorElement>('a.cite')
-    if (!cite && narrow && isDay && picked === null) {
+    if (!cite && narrow && picked === null) {
       // Phone: the board is not arranged here, but a hand-written card can still be opened to change it.
       const d = downAt.current
       const still = !d || Math.hypot(e.clientX - d.x, e.clientY - d.y) < 8
@@ -632,19 +621,21 @@ export function BoardView(props: Props) {
     }
   }
 
-  // Papers and piles dragged in from the side list or the shelf land in this pile.
+  // A paper dragged in from the library list (or a card from a search result) is shown here as a pointer.
   const onDragOver = (e: DragEvent) => {
-    if (isDay || !e.dataTransfer.types.includes(DRAG_TYPE)) return
+    if (!e.dataTransfer.types.includes(DRAG_TYPE)) return
     e.preventDefault()
     setDropping(true)
   }
   const onDrop = async (e: DragEvent) => {
     setDropping(false)
-    if (isDay || !pile) return
     const ref = readDrag(e)
-    if (!ref) return
+    if (!ref || (ref.type !== 'paper' && ref.type !== 'card' && ref.type !== 'cover')) return
     e.preventDefault()
-    say(ADD_MESSAGE[await addToPile(pile.id, ref)](pile.name))
+    if (isHome(`${ref.type}:${ref.id}`)) return say('它本来就在这块画板上')
+    const at = api.current?.toBoard(e.clientX, e.clientY) ?? { x: 0, y: 0 }
+    const result = await addRefToBoard(boardId, { type: ref.type, id: ref.id }, { x: at.x - CARD_W / 2, y: at.y - 30 }, topZ)
+    say(result === 'added' ? '已放到画板上' : '这块画板上已经有它了')
   }
 
   const shownNodes = useMemo(
@@ -653,60 +644,58 @@ export function BoardView(props: Props) {
   )
 
   const popPaper = popover ? papers?.find((p) => p.id === popover.paperId) : undefined
-  const loaded = source !== undefined && items !== undefined && (isDay || pile !== undefined)
-  useStageAnimation(stage, 2, isDay ? date : `pile:${pileId}`, loaded)
+  const loaded = source !== undefined && items !== undefined && board !== undefined
 
-  if (!isDay && loaded && (!pile || pile.deleted)) {
+  // opening a board counts as using it; so does any edit made while it is open
+  useEffect(() => {
+    if (!board || board.deleted) return
+    void touchBoard(boardId)
+    const onChange = () => void touchBoard(boardId)
+    localChangeListeners.add(onChange)
+    return () => {
+      localChangeListeners.delete(onChange)
+    }
+  }, [boardId, board])
+
+  // coming from the time view or a search result: bring that card to the middle
+  const focused = useRef('')
+  useEffect(() => {
+    if (!focus || !loaded || focused.current === focus) return
+    const node = nodes.find((n) => n.key === `card:${focus}`)
+    if (!node) return
+    focused.current = focus
+    const h = heights[node.key] ?? 160
+    // after the board's own first fit
+    const t = setTimeout(() => api.current?.focusOn(node.x, node.y, node.w, h), 60)
+    return () => clearTimeout(t)
+  }, [focus, loaded, nodes, heights])
+
+  const back = board?.pile_id && piles?.some((p) => p.id === board.pile_id) ? `#/pile/${board.pile_id}` : '#/boards'
+
+  if (loaded && (!board || board.deleted)) {
     return (
       <div className="dayboard">
         <header className="board-head">
-          <a className="crumb-link" href="#/board">
+          <a className="crumb-link" href="#/boards">
             <IconBack />
             画板
           </a>
         </header>
-        <p className="empty board-empty">找不到这个堆，可能已经删掉了。</p>
+        <p className="empty board-empty">找不到这块画板，可能已经删掉了。</p>
       </div>
     )
   }
 
   const hasContent = sortedRecords.length > 0 || manualCards.length > 0
-  let head: ReactNode
-  if (isDay) {
-    const { days } = props as { days: string[] }
-    const keywords = [...new Set(sortedRecords.flatMap((r) => r.keywords))].slice(0, 6)
-    const index = days.indexOf(date)
-    const prev = index > 0 ? days[index - 1] : index === -1 ? [...days].reverse().find((d) => d < date) : undefined
-    const next = index >= 0 && index < days.length - 1 ? days[index + 1] : index === -1 ? days.find((d) => d > date) : undefined
-    const [year, month] = date.split('-')
-    head = (
-      <>
-        <Crumb
-          year={year}
-          month={month}
-          date={date}
-          prev={prev ? { href: `#/board/${prev}`, label: shortDate(prev) } : undefined}
-          next={next ? { href: `#/board/${next}`, label: shortDate(next) } : undefined}
-        />
-        {loaded && hasContent && <span className="board-state">{edited ? '已编排' : '模板布局 · 未编辑'}</span>}
-        <div className="board-keys">
-          {keywords.map((k) => (
-            <span key={k} className="key-tag">
-              {k}
-            </span>
-          ))}
-        </div>
-        {loaded && hasContent && (
-          <AddToDiscussion refs={[{ type: 'day', id: date }]} iconOnly label="把这一天的画板放进讨论框" />
-        )}
-      </>
-    )
-  } else {
-    head = pile ? <PileHead pile={pile} count={countLabel(countContents(pile.id, pileItems ?? []))} editing={isEditing} /> : null
-  }
+  const head: ReactNode = board ? (
+    <>
+      <BoardHead board={board} back={back} editing={isEditing} />
+      {loaded && hasContent && <span className="board-state">{(cards?.length ?? 0) + ' 张卡片'}</span>}
+      {loaded && <AddToDiscussion refs={[{ type: 'board', id: boardId }]} iconOnly label="把这块画板放进讨论框" />}
+    </>
+  ) : null
 
-  const empty = loaded && nodes.length === 0 && markers.length === 0
-  const [year, month] = date.split('-')
+  const empty = loaded && nodes.length === 0 && (strokes?.length ?? 0) === 0
 
   return (
     <div
@@ -725,7 +714,7 @@ export function BoardView(props: Props) {
 
       {empty && (
         <p className="empty board-empty">
-          {isDay ? '这一天还是空白的。点“加卡片”写下第一张，或者在主页导入这一天的记录。' : '这个堆还是空的。把论文从左边拖进来，或在画板、论文页里用"放进堆"。'}
+          这块画板还是空白的。点“加卡片”写下第一张，或者在主页导入时选这块画板。
         </p>
       )}
 
@@ -752,44 +741,9 @@ export function BoardView(props: Props) {
         inkColor={INK}
         apiRef={api}
         onZoomOut={() => {
-          window.location.hash = isDay ? `#/board/${year}-${month}` : '#/board'
+          window.location.hash = back
         }}
-        onDropOn={
-          isDay
-            ? (key, el) => {
-                const r = resolve(key)
-                const id = el.dataset.pileDrop
-                const target = id === 'new' ? 'new' : piles?.find((p) => p.id === id)
-                if (r && target) void dropInto(target, r.ref)
-              }
-            : undefined
-        }
       />
-
-      {showDock && selectedItem && (
-        <div className="dock" role="group" aria-label="放进堆">
-          <span className="dock-label">放进堆</span>
-          {piles?.map((p) => (
-            <button key={p.id} type="button" className="chip" data-pile-drop={p.id} onClick={() => void dropInto(p, selectedItem.ref)}>
-              {p.name}
-            </button>
-          ))}
-          <button type="button" className="chip" data-pile-drop="new" onClick={() => void dropInto('new', selectedItem.ref)}>
-            <IconPlus />
-            新的堆
-          </button>
-        </div>
-      )}
-
-      {markers.length > 0 && (
-        <div className="markers">
-          {markers.map(({ paper, again }) => (
-            <a key={paper.id} className="marker" href={`#/paper/${paper.id}`}>
-              {again ? '重读了' : '读了'} {paper.title}
-            </a>
-          ))}
-        </div>
-      )}
 
       {canEdit &&
         (isEditing ? (
@@ -814,7 +768,7 @@ export function BoardView(props: Props) {
               icon={<IconPen />}
             />
             <span className="toolbar-gap" aria-hidden="true" />
-            {isDay && <ToolButton label="卡片" onClick={() => setCardDialog({})} icon={<IconPlus />} />}
+            <ToolButton label="卡片" onClick={() => setCardDialog({})} icon={<IconPlus />} />
             <ToolButton label="文字" onClick={() => void addText()} icon={<IconText />} />
             <ToolButton label="贴图" onClick={() => fileRef.current?.click()} icon={<IconImage />} />
             <span className="toolbar-gap" aria-hidden="true" />
@@ -842,12 +796,10 @@ export function BoardView(props: Props) {
           loaded &&
           picked === null && (
             <div className="edit-toggle view-tools">
-              {isDay && (
-                <button type="button" className="btn" onClick={() => setCardDialog({})}>
-                  <IconPlus />
-                  加卡片
-                </button>
-              )}
+              <button type="button" className="btn" onClick={() => setCardDialog({})}>
+                <IconPlus />
+                加卡片
+              </button>
               {canPick && (cards?.length ?? 0) > 0 && (
                 <button type="button" className="btn" onClick={() => setPicked([])}>
                   选卡片
@@ -861,7 +813,7 @@ export function BoardView(props: Props) {
           )
         ))}
 
-      {!canEdit && isDay && loaded && (
+      {!canEdit && loaded && (
         <button type="button" className="btn edit-toggle" onClick={() => setCardDialog({})}>
           <IconPlus />
           加卡片
@@ -871,7 +823,8 @@ export function BoardView(props: Props) {
       {cardDialog && (
         <CardDialog
           card={cardDialog.card}
-          onSave={(kind, text) => void saveCard(kind, text)}
+          defaultDate={todayLocal()}
+          onSave={(kind, text, date) => void saveCard(kind, text, date)}
           onDelete={
             cardDialog.card
               ? () => {
@@ -919,32 +872,31 @@ export function BoardView(props: Props) {
   )
 }
 
-function PileHead({ pile, count, editing }: { pile: Pile; count: string; editing: boolean }) {
+function BoardHead({ board, back, editing }: { board: Board; back: string; editing: boolean }) {
   const [name, setName] = useState<string | null>(null)
-
   const save = () => {
-    if (name !== null) void renamePile(pile, name)
+    if (name !== null) void renameBoard(board, name)
     setName(null)
   }
 
   return (
     <>
-      <a className="crumb-link" href="#/board" aria-label="回到画板">
+      <a className="crumb-link" href={back} aria-label="回到画板列表">
         <IconBack />
       </a>
       {name === null ? (
         <h1 className="pile-title">
-          <button type="button" onClick={() => setName(pile.name)} aria-label={`改名：${pile.name}`}>
-            {pile.name}
+          <button type="button" onClick={() => setName(board.name)} aria-label={`改名：${board.name}`}>
+            {board.name}
           </button>
         </h1>
       ) : (
         <label className="pile-title-edit">
-          <span className="sr-only">堆的名字</span>
+          <span className="sr-only">画板的名字</span>
           <input
             value={name}
             autoFocus
-            maxLength={30}
+            maxLength={40}
             onChange={(e) => setName(e.target.value)}
             onFocus={(e) => e.currentTarget.select()}
             onBlur={save}
@@ -955,23 +907,23 @@ function PileHead({ pile, count, editing }: { pile: Pile; count: string; editing
           />
         </label>
       )}
-      <span className="board-state">{count}</span>
-      <AddToDiscussion refs={[{ type: 'pile', id: pile.id }]} iconOnly label="把这个堆放进讨论框" />
       {editing && (
         <div className="pile-tools">
-          <AddToPile target={{ type: 'pile', id: pile.id }} label="把这个堆放进…" />
           <button
             type="button"
             className="btn btn-small btn-quiet edit-delete"
             onClick={() => {
-              if (window.confirm(`删除堆「${pile.name}」？里面的卡片和论文不会受影响，只是不再放在这个堆里。`)) {
-                void deletePile(pile).then(() => {
-                  window.location.hash = '#/board'
-                })
-              }
+              void boardCounts(board.id).then(({ cards, other }) => {
+                const what = [cards > 0 ? `${cards} 张卡片` : '', other > 0 ? `${other} 样别的东西（文字、贴图、笔迹、论文卡片）` : ''].filter(Boolean).join('和')
+                if (window.confirm(`删除画板「${board.name}」？${what ? `上面的 ${what}会一起删除。` : '它是空的。'}论文库里的论文不受影响。`)) {
+                  void deleteBoard(board).then(() => {
+                    window.location.hash = '#/boards'
+                  })
+                }
+              })
             }}
           >
-            删除这个堆
+            删除这块画板
           </button>
         </div>
       )}

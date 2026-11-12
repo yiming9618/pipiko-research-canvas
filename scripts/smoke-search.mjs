@@ -40,15 +40,8 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   await page.getByRole('button', { name: '放入示例内容' }).click()
   await page.locator('.import-msg', { hasText: '生成了 6 张卡片' }).waitFor()
 
-  // a pile, to check searching from inside one
-  await page.goto(`${url}#/board`)
-  await page.getByRole('button', { name: '新建堆' }).click()
-  await page.getByLabel('堆的名字').fill('共在')
-  await page.getByRole('button', { name: '建好' }).click()
-  await page.locator('.pile-tile', { hasText: '共在' }).waitFor()
-
   // ── the search control is on every page
-  const pages = ['#/', '#/board', `#/board/${today}`, `#/board/${today.slice(0, 4)}`, '#/library', '#/settings']
+  const pages = ['#/', '#/boards', '#/time', `#/time/${today.slice(0, 4)}`, '#/library', '#/settings']
   let everywhere = true
   for (const hash of pages) {
     await page.goto(`${url}${hash}`)
@@ -69,7 +62,7 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   }
   const kinds = () => page.locator('.search-kind').allTextContents()
 
-  await page.goto(`${url}#/board`)
+  await page.goto(`${url}#/boards`)
   await open()
   check(`${tag} 打开后先看到怎么组合的说明`, await page.locator('.search-hint').isVisible())
   await page.screenshot({ path: `${out}/${size.name}-search-1-open.png` })
@@ -100,8 +93,8 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   // ── jump
   await search('今天 问题 问题二')
   await page.locator('.search-item a').click()
-  await page.getByRole('heading', { name: `${month}/${Number(today.slice(8))}`, level: 1 }).waitFor()
-  check(`${tag} 点结果跳到那一天的画板，面板自动关上`, (await page.locator('.search-panel').count()) === 0)
+  await page.locator('.node.card.is-focus', { hasText: '问题二' }).waitFor()
+  check(`${tag} 点结果跳到那张卡片所在的画板，并高亮它；面板自动关上`, (await page.locator('.search-panel').count()) === 0)
 
   await open()
   check(`${tag} 再打开还留着上次搜的内容`, (await page.locator('.search-panel input').inputValue()) === '今天 问题 问题二')
@@ -113,23 +106,26 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   await page.getByRole('heading', { name: '示例论文标题二', level: 1 }).waitFor()
   check(`${tag} 点论文结果进论文页`, true)
 
-  // ── into a pile
-  await page.goto(`${url}#/board`)
-  await page.locator('.shelf .pile-tile', { hasText: '共在' }).click()
-  await page.getByRole('heading', { name: '共在', level: 1 }).waitFor()
-  await search('论文 标题一')
-  await page.getByRole('button', { name: /放进「共在」：示例论文标题一/ }).click()
-  await page.getByText('已放进「共在」').waitFor()
+  // ── boards are found by name; a result can be dragged onto a board
+  await search('未命名')
+  check(`${tag} 画板能按名字搜到`, (await page.locator('.search-item .search-kind', { hasText: '画板' }).count()) === 1)
   await page.keyboard.press('Escape')
-  await page.locator('.node.papercard', { hasText: '示例论文标题一' }).waitFor()
-  check(`${tag} 在堆里搜索，点 + 直接放进这个堆`, true)
 
   if (!size.isMobile) {
+    await page.goto(`${url}#/boards`)
+    await page.getByRole('button', { name: '新建画板' }).click()
+    await page.getByLabel(/画板的名字/).fill('另一块画板')
+    await page.getByRole('button', { name: '建好' }).click()
+    await page.getByRole('heading', { name: '另一块画板', level: 1 }).waitFor()
+    await search('论文 标题一')
+    await page.locator('.search-item a').first().dragTo(page.locator('.canvas'), { targetPosition: { x: 300, y: 500 } })
+    await page.locator('.node.papercard', { hasText: '示例论文标题一' }).waitFor()
+    check(`${tag} 把搜到的论文拖到画板上，生成论文卡片`, true)
     await search('今天 思考')
-    await page.locator('.search-item a').dragTo(page.locator('.canvas'), { targetPosition: { x: 300, y: 600 } })
+    await page.locator('.search-item a').first().dragTo(page.locator('.canvas'), { targetPosition: { x: 300, y: 300 } })
     await page.locator('.node.card', { hasText: '思考：' }).waitFor()
-    check(`${tag} 把搜索结果拖进堆`, true)
-    await page.screenshot({ path: `${out}/${size.name}-search-3-pile.png` })
+    check(`${tag} 把别的画板上的卡片拖进来，显示为引用（写着来自哪块画板）`, await page.locator('.node.card .card-source', { hasText: '未命名画板' }).isVisible())
+    await page.screenshot({ path: `${out}/${size.name}-search-3-board.png` })
   }
 
   check(`${tag} 没有报错`, errors.length === 0, errors.join(' | '))

@@ -61,7 +61,7 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
 
   // ── the entry in the top-right corner, on every page
   let everywhere = true
-  for (const hash of ['#/', '#/board', `#/board/${today}`, '#/library', '#/settings']) {
+  for (const hash of ['#/', '#/boards', '#/time', '#/library', '#/settings']) {
     await page.goto(`${url}${hash}`)
     await page.waitForTimeout(200)
     if (!(await page.getByRole('link', { name: /^讨论框/ }).isVisible())) everywhere = false
@@ -110,9 +110,11 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   check(`${tag} 导出里有想看的理由`, md.includes('- 为什么想看：想了解它的方法'))
   check(`${tag} 已读论文附上重点区块`, md.includes('**重点 · '))
 
-  // ── whole day (works on the phone too)
-  await page.goto(`${url}#/board/${today}`)
-  await page.getByRole('button', { name: '把这一天的画板放进讨论框' }).click()
+  // ── a whole board (works on the phone too)
+  await page.goto(`${url}#/boards`)
+  await page.locator('.board-tile-main').first().click()
+  await page.locator('.node.card').first().waitFor()
+  await page.getByRole('button', { name: '把这块画板放进讨论框' }).click()
   await page.getByLabel('或者新建一个').fill('最近的进展')
   await page.getByRole('button', { name: '新建并放入' }).click()
   await toastSays('已放进「最近的进展」')
@@ -162,21 +164,24 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   }
 
   // ── a whole pile
-  await page.goto(`${url}#/board`)
+  await page.goto(`${url}#/boards`)
   await page.getByRole('button', { name: '新建堆' }).click()
   await page.getByLabel('堆的名字').fill('共在')
   await page.getByRole('button', { name: '建好' }).click()
-  await page.locator('.shelf .pile-tile', { hasText: '共在' }).click()
+  await page.locator('.pile-tile', { hasText: '共在' }).waitFor()
+  await page.locator('.board-tile-move select').first().selectOption({ label: '共在' })
+  await toastSays('已放进堆「共在」')
+  await page.locator('.pile-tile', { hasText: '共在' }).click()
   await page.getByRole('heading', { name: '共在', level: 1 }).waitFor()
-  await page.getByRole('button', { name: '把这个堆放进讨论框' }).click()
+  await page.getByRole('button', { name: '整个堆放进讨论框' }).click()
   await page.getByRole('button', { name: /最近的进展/ }).click()
   await toastSays('已放进「最近的进展」')
   check(`${tag} 整个堆放进讨论框`, true)
 
   // ── the list, rename, remove one, export with research content
   await page.getByRole('link', { name: /^讨论框/ }).click()
-  await page.locator('.box-row', { hasText: '1 天的画板 · 1 个堆' }).waitFor()
-  check(`${tag} 列表里有两个讨论框，各自写着里面有什么`, (await page.locator('.box-row').count()) === 2 && (await page.locator('.box-row', { hasText: '最近的进展' }).innerText()).includes('1 天的画板 · 1 个堆'))
+  await page.locator('.box-row', { hasText: '1 块画板 · 1 个堆' }).waitFor()
+  check(`${tag} 列表里有两个讨论框，各自写着里面有什么`, (await page.locator('.box-row').count()) === 2 && (await page.locator('.box-row', { hasText: '最近的进展' }).innerText()).includes('1 块画板 · 1 个堆'))
   check(`${tag} 列表：可点元素 ≥ 44px`, (await smallTargets('.page')).length === 0, (await smallTargets('.page')).join(', '))
   await page.screenshot({ path: `${out}/${size.name}-disc-3-list.png` })
 
@@ -191,7 +196,7 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   await page.getByText('已复制到剪贴板').waitFor()
   md = await page.evaluate(() => navigator.clipboard.readText())
   check(`${tag} 含画板或堆：开头是“研究进展”`, md.startsWith('这是我最近的研究进展，请和我一起讨论。'))
-  check(`${tag} 导出整块画板：记录标题、摘要、卡片`, md.includes(`## 画板：${today}`) && md.includes('摘要：') && md.includes('【问题】'))
+  check(`${tag} 导出整块画板：名称、记录、卡片`, md.includes('## 画板：未命名画板') && md.includes('研究记录：') && md.includes('【问题】'))
   check(`${tag} 导出里有堆`, md.includes('## 堆：共在'))
   check(`${tag} 卡片里引用到的论文附在后面`, md.includes('## 上面提到的论文') && md.includes('示例论文标题'))
   check(`${tag} 末尾附两套模板`, md.includes('## 研究记录的模板') && md.includes('## 论文的模板'))

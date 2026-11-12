@@ -2,7 +2,9 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useMemo, useState, type FormEvent } from 'react'
 import { activeBoxes, archivedBoxes, itemsOf } from '../../domain/discussions'
 import { buildExport } from '../../domain/exportMarkdown'
+import { boardHref } from '../../domain/boards'
 import { shortDate } from '../../domain/importer'
+import { homeBoardId } from '../../domain/migrate'
 import type { Discussion, DiscussionItem } from '../../domain/types'
 import { db } from '../../store/db'
 import {
@@ -16,12 +18,12 @@ import { copyText } from '../../ui/clipboard'
 import { IconBack, IconChevron, IconClose, IconCopy, IconPlus } from '../../ui/icons'
 import { TopNav } from '../../ui/TopNav'
 
-const KIND_WORD: Record<DiscussionItem['ref_type'], string> = { paper: '篇论文', card: '张卡片', day: '天的画板', pile: '个堆', board: '块画板' }
+const KIND_WORD: Record<DiscussionItem['ref_type'], string> = { paper: '篇论文', card: '张卡片', day: '块画板', pile: '个堆', board: '块画板' }
 
 function summary(items: DiscussionItem[]): string {
   if (items.length === 0) return '还是空的'
-  return (['paper', 'card', 'day', 'pile'] as const)
-    .map((t) => [t, items.filter((i) => i.ref_type === t).length] as const)
+  return (['paper', 'card', 'board', 'pile'] as const)
+    .map((t) => [t, items.filter((i) => i.ref_type === t || (t === 'board' && i.ref_type === 'day')).length] as const)
     .filter(([, n]) => n > 0)
     .map(([t, n]) => `${n} ${KIND_WORD[t]}`)
     .join(' · ')
@@ -144,7 +146,7 @@ function Title({ box }: { box: Discussion }) {
 /** One discussion box: what is in it, and "导出给 AI". */
 export function DiscussionPage({ id }: { id: string }) {
   const data = useLiveQuery(async () => {
-    const [box, items, papers, blocks, types, records, cards, boardItems, connectors, strokes, piles, imports] = await Promise.all([
+    const [box, items, papers, blocks, types, records, cards, boardItems, connectors, strokes, piles, imports, boards] = await Promise.all([
       db.discussions.get(id),
       db.discussionItems.where('discussion_id').equals(id).toArray(),
       db.papers.toArray(),
@@ -157,8 +159,9 @@ export function DiscussionPage({ id }: { id: string }) {
       db.strokes.toArray(),
       db.piles.toArray(),
       db.imports.toArray(),
+      db.boards.toArray(),
     ])
-    return { box: box ?? null, items: itemsOf(id, items), papers, blocks, types, records, cards, boardItems, connectors, strokes, piles, imports }
+    return { box: box ?? null, items: itemsOf(id, items), papers, blocks, types, records, cards, boardItems, connectors, strokes, piles, imports, boards }
   }, [id])
   const [exported, setExported] = useState<'ok' | 'manual' | null>(null)
 
@@ -190,16 +193,19 @@ export function DiscussionPage({ id }: { id: string }) {
       if (item.ref_type === 'card') {
         const c = data.cards.find((x) => x.id === item.ref_id && !x.deleted)
         if (!c) return null
-        const edited = data.boardItems.find((i) => !i.deleted && i.board_id === `day:${c.date}` && i.ref_type === 'card' && i.ref_id === c.id && i.text_override !== undefined)
+        const home = homeBoardId(c)
+        const edited = data.boardItems.find((i) => !i.deleted && i.board_id === home && i.ref_type === 'card' && i.ref_id === c.id && i.text_override !== undefined)
         const text = (edited?.text_override ?? c.body_md).replace(/\s+/g, ' ').trim()
-        return { item, kind: `${c.kind === '其他' ? c.heading : c.kind} · ${shortDate(c.date)}`, text: text.length > 80 ? text.slice(0, 80) + '…' : text, href: `#/board/${c.date}` }
+        return { item, kind: `${c.kind === '其他' ? c.heading : c.kind} · ${shortDate(c.date)}`, text: text.length > 80 ? text.slice(0, 80) + '…' : text, href: boardHref(home, c.id) }
       }
-      if (item.ref_type === 'day') {
-        const titles = data.records.filter((r) => !r.deleted && r.date === item.ref_id).map((r) => r.title)
-        return { item, kind: '整块画板', text: `${shortDate(item.ref_id)}${titles.length > 0 ? ` · ${titles.join('、')}` : ''}`, href: `#/board/${item.ref_id}` }
+      if (item.ref_type === 'day' || item.ref_type === 'board') {
+        // a "day" entry points at the board that day became
+        const boardId = item.ref_type === 'day' ? `day:${item.ref_id}` : item.ref_id
+        const board = data.boards.find((x) => x.id === boardId && !x.deleted)
+        return board && { item, kind: '整块画板', text: board.name, href: boardHref(board.id) }
       }
       const pile = data.piles.find((x) => x.id === item.ref_id && !x.deleted)
-      return pile && { item, kind: '堆', text: pile.name, href: `#/pile/${pile.id}` }
+      return pile && { item, kind: '堆', text: `${pile.name}（${data.boards.filter((b) => !b.deleted && b.pile_id === pile.id).length} 块画板）`, href: `#/pile/${pile.id}` }
     })
     .filter((r): r is NonNullable<typeof r> => !!r)
 
@@ -226,7 +232,7 @@ export function DiscussionPage({ id }: { id: string }) {
             </button>
           </p>
         )}
-        {rows.length === 0 && <p className="empty">还是空的。在论文页、想看列表、画板或堆里点"放进讨论框"。</p>}
+        {rows.length === 0 && <p className="empty">还是空的。在论文页、想看列表、画板或堆里点“放进讨论框”。</p>}
         <ul className="box-items">
           {rows.map(({ item, kind, text, href }) => (
             <li key={item.id} className="box-item">

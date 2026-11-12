@@ -59,3 +59,58 @@ export function defaultLayout(
   }
   return out
 }
+
+/** Width of one import's block: its cover, with two columns of cards below. */
+export const BLOCK_W = CARD_W * 2 + GAP
+
+export interface BoardLayoutInput {
+  /** Records from the time of daily boards (no saved origin): stacked from the top-left, as they always were. */
+  stacked: LayoutRecord[]
+  /** Cards written by hand that were never given a place: after the stacked records. */
+  loose: string[]
+  /** Imports put down at a point of their own. */
+  placed: (LayoutRecord & { origin: { x: number; y: number } })[]
+  heightOf: (key: string) => number
+  /** Columns of the stacked part (one on a phone when nothing was arranged). */
+  columns: 1 | 2
+}
+
+/**
+ * Where everything on a board sits when it has not been moved by hand.
+ * Adding a placed import never changes where anything else is.
+ */
+export function boardLayout(input: BoardLayoutInput): Map<string, Placed> {
+  const out = defaultLayout(input.stacked, input.heightOf, input.columns, input.loose)
+  for (const record of input.placed) {
+    for (const [key, at] of defaultLayout([record], input.heightOf, 2)) {
+      out.set(key, { x: at.x + record.origin.x, y: at.y + record.origin.y, w: at.w })
+    }
+  }
+  return out
+}
+
+export interface Occupied {
+  /** Something sits in the stacked area (older records, or hand-written cards without a place). */
+  hasStacked: boolean
+  /** Origins of the imports already put down. */
+  origins: { x: number; y: number }[]
+  /** Everything with a saved position: moved cards, text, pictures, paper cards. */
+  items: { x: number; w: number }[]
+  /** Leftmost and rightmost reach of the ink. */
+  ink?: { minX: number; maxX: number }
+}
+
+/**
+ * Where the next import goes: to the right of everything, level with the top.
+ * Blocks have a fixed width, so going sideways cannot land on anything however
+ * tall the existing cards turn out to be.
+ */
+export function nextOrigin(o: Occupied): { x: number; y: number } {
+  const rights: number[] = []
+  if (o.hasStacked) rights.push(BLOCK_W)
+  for (const p of o.origins) rights.push(p.x + BLOCK_W)
+  for (const i of o.items) rights.push(i.x + i.w)
+  if (o.ink) rights.push(o.ink.maxX)
+  if (rights.length === 0) return { x: 0, y: 0 }
+  return { x: Math.ceil(Math.max(...rights)) + RECORD_GAP, y: 0 }
+}

@@ -1,11 +1,11 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { shortDate } from '../domain/importer'
-import { isEmptyQuery, parseQuery, runSearch, type Hit } from '../domain/search'
-import { db, todayLocal } from '../store/db'
-import { ADD_MESSAGE, DRAG_TYPE, addToPile } from '../store/pileActions'
+import { isEmptyQuery, parseQuery, runSearch } from '../domain/search'
+import { todayLocal } from '../store/db'
+import { DRAG_TYPE } from './drag'
 import { loadSearchData } from '../store/searchIndex'
-import { IconClose, IconPlus, IconSearch } from './icons'
+import { IconClose, IconSearch } from './icons'
 
 const MAX_SHOWN = 60
 
@@ -15,18 +15,15 @@ let lastText = ''
 /**
  * The small search control in the top-right corner of every page. It opens a
  * panel in that corner, leaving the rest of the page visible so a result can
- * be dragged onto a pile.
+ * be dragged onto a board.
  */
 export function SearchBox() {
   const [open, setOpen] = useState(false)
   const [text, setText] = useState(lastText)
-  const [status, setStatus] = useState('')
   const panel = useRef<HTMLDivElement>(null)
   const input = useRef<HTMLInputElement>(null)
 
   const data = useLiveQuery(() => (open ? loadSearchData() : undefined), [open])
-  const pileId = open && window.location.hash.startsWith('#/pile/') ? decodeURIComponent(window.location.hash.slice(7)) : ''
-  const pile = useLiveQuery(() => (pileId ? db.piles.get(pileId) : undefined), [pileId])
 
   const deferred = useDeferredValue(text)
   const query = useMemo(() => (data ? parseQuery(deferred, data.types, todayLocal()) : null), [data, deferred])
@@ -55,12 +52,6 @@ export function SearchBox() {
       window.removeEventListener('pointerdown', onDown)
     }
   }, [open])
-
-  const put = async (hit: Hit) => {
-    if (!pile || !hit.doc.ref) return
-    setStatus(ADD_MESSAGE[await addToPile(pile.id, hit.doc.ref)](pile.name))
-    setTimeout(() => setStatus(''), 3200)
-  }
 
   if (!open) {
     return (
@@ -109,7 +100,7 @@ export function SearchBox() {
       ) : (
         <>
           <p className="search-count" role="status" aria-live="polite">
-            {status || (hits.length === 0 ? '没有找到。换个说法，或少写一个条件试试。' : `找到 ${hits.length} 条${hits.length > MAX_SHOWN ? `，先显示前 ${MAX_SHOWN} 条` : ''}`)}
+            {(hits.length === 0 ? '没有找到。换个说法，或少写一个条件试试。' : `找到 ${hits.length} 条${hits.length > MAX_SHOWN ? `，先显示前 ${MAX_SHOWN} 条` : ''}`)}
           </p>
           <ul className="search-list">
             {hits.slice(0, MAX_SHOWN).map((hit) => {
@@ -130,7 +121,7 @@ export function SearchBox() {
                       <span className="search-kind" data-color={d.color}>
                         {d.label}
                       </span>
-                      {date && d.kind !== 'pile' && <span>{date.slice(0, 4) === todayLocal().slice(0, 4) ? shortDate(date) : date}</span>}
+                      {date && d.kind !== 'pile' && d.kind !== 'board' && <span>{date.slice(0, 4) === todayLocal().slice(0, 4) ? shortDate(date) : date}</span>}
                     </span>
                     <span className="search-title">{d.title || '（没有标题）'}</span>
                     {hit.snippet ? (
@@ -143,11 +134,6 @@ export function SearchBox() {
                       d.body && <span className="search-snippet">{d.body.replace(/\s+/g, ' ').slice(0, 72)}</span>
                     )}
                   </a>
-                  {pile && d.ref && !(d.ref.type === 'pile' && d.ref.id === pile.id) && (
-                    <button type="button" className="icon-btn" aria-label={`放进「${pile.name}」：${d.title}`} onClick={() => void put(hit)}>
-                      <IconPlus />
-                    </button>
-                  )}
                 </li>
               )
             })}

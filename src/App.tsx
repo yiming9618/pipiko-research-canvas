@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { BoardPage } from './views/board/BoardPage'
+import { BoardsPage, PilePage } from './views/boards/BoardsPage'
+import { TimePage } from './views/time/TimePage'
 import { Home } from './views/home/Home'
 import { Library } from './views/library/Library'
 import { Settings } from './views/settings/Settings'
@@ -29,19 +31,35 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onChange)
   }, [])
 
+  // "#/board/<id>?card=<id>": the part after "?" names a card to bring into view
+  const [path, query = ''] = route.split('?')
+  const rest = (prefix: string) => decodeURIComponent(path.slice(prefix.length))
+  const focus = new URLSearchParams(query).get('card') ?? undefined
+
+  // Addresses from the time of daily boards still work: a date opens the board that day became,
+  // a year or a month opens the time view.
+  const old = path.startsWith('/board/') ? rest('/board/') : ''
+  useEffect(() => {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(old)) window.location.replace(`#/board/${encodeURIComponent(`day:${old}`)}`)
+    else if (/^\d{4}(-\d{2})?$/.test(old)) window.location.replace(`#/time/${old}`)
+    else if (path === '/board') window.location.replace('#/boards')
+  }, [old, path])
+
   let page = <Home />
-  if (route === '/settings') page = <Settings />
-  else if (route === '/board') page = <BoardPage />
-  else if (route.startsWith('/board/')) page = <BoardPage param={route.slice(7)} />
-  else if (route.startsWith('/pile/')) page = <BoardPage pileId={decodeURIComponent(route.slice(6))} />
-  else if (route === '/discussions') page = <DiscussionsPage />
-  else if (route.startsWith('/discussion/')) page = <DiscussionPage id={decodeURIComponent(route.slice(12))} />
-  else if (route === '/library') page = <Library />
-  else if (route.startsWith('/paper/')) page = <Library paperId={decodeURIComponent(route.slice(7))} />
+  if (path === '/settings') page = <Settings />
+  else if (path === '/boards' || path === '/board') page = <BoardsPage />
+  else if (path.startsWith('/board/')) page = /^\d{4}(-\d{2}){0,2}$/.test(old) ? <BoardsPage /> : <BoardPage boardId={old} focus={focus} />
+  else if (path.startsWith('/pile/')) page = <PilePage id={rest('/pile/')} />
+  else if (path === '/time') page = <TimePage />
+  else if (path.startsWith('/time/')) page = <TimePage param={rest('/time/')} />
+  else if (path === '/discussions') page = <DiscussionsPage />
+  else if (path.startsWith('/discussion/')) page = <DiscussionPage id={rest('/discussion/')} />
+  else if (path === '/library') page = <Library />
+  else if (path.startsWith('/paper/')) page = <Library paperId={rest('/paper/')} />
   return (
     <>
       {page}
-      <SyncBanner onSettings={route === '/settings'} />
+      <SyncBanner onSettings={path === '/settings'} />
       <Toaster />
     </>
   )

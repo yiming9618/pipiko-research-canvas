@@ -97,6 +97,7 @@ export async function removeStroke(stroke: Stroke): Promise<void> {
  * `at` places it on the board; without it the card takes the next template spot.
  */
 export async function addManualCard(
+  boardId: string,
   date: string,
   kind: Exclude<CardKind, '其他'>,
   text: string,
@@ -104,19 +105,25 @@ export async function addManualCard(
 ): Promise<string> {
   const now = nowIso()
   const id = newId('card')
-  const card: Card = { id, record_id: '', date, kind, heading: kind, body_md: text.trim(), order: Date.now(), updated_at: now }
+  const card: Card = { id, record_id: '', date, kind, heading: kind, body_md: text.trim(), order: Date.now(), board_id: boardId, updated_at: now }
   await applyChanges({
     cards: [card],
     ...(at
-      ? { boardItems: [{ id: newId('bi'), board_id: `day:${date}`, ref_type: 'card' as const, ref_id: id, x: at.x, y: at.y, w: at.w, h: 0, z: at.z, updated_at: now }] }
+      ? { boardItems: [{ id: newId('bi'), board_id: boardId, ref_type: 'card' as const, ref_id: id, x: at.x, y: at.y, w: at.w, h: 0, z: at.z, updated_at: now }] }
       : {}),
   })
   return id
 }
 
 /** Hand-written cards are edited in place: there is no imported original to keep. */
-export async function saveManualCard(card: Card, patch: { text?: string; kind?: Exclude<CardKind, '其他'> }): Promise<void> {
+export async function saveManualCard(card: Card, patch: { text?: string; kind?: Exclude<CardKind, '其他'>; date?: string }): Promise<void> {
   const next: Card = { ...card, updated_at: nowIso() }
+  if (patch.date && patch.date !== card.date && /^\d{4}-\d{2}-\d{2}$/.test(patch.date)) {
+    // A card from the time of daily boards is tied to its board by its date: remember the
+    // date it had at first, so it stays on its board (and in its file) when the date changes.
+    if (!card.board_id && !card.home_date) next.home_date = card.date
+    next.date = patch.date
+  }
   if (patch.text !== undefined) next.body_md = patch.text.trim()
   if (patch.kind) {
     next.kind = patch.kind
@@ -136,4 +143,22 @@ export async function deleteManualCard(card: Card): Promise<void> {
     boardItems: items.map((i) => ({ ...i, deleted: true, updated_at: now })),
     connectors: connectors.map((c) => ({ ...c, deleted: true, updated_at: now })),
   })
+}
+
+/**
+ * Shows something from elsewhere on a board: a paper, or a card / record that
+ * lives on another board. Only a pointer is stored. The same thing is not put on a board twice.
+ */
+export async function addRefToBoard(
+  boardId: string,
+  ref: { type: 'paper' | 'card' | 'cover'; id: string },
+  at: { x: number; y: number },
+  z: number,
+): Promise<'added' | 'duplicate'> {
+  const existing = await db.boardItems.where('board_id').equals(boardId).filter((i) => !i.deleted && i.ref_type === ref.type && i.ref_id === ref.id).first()
+  if (existing) return 'duplicate'
+  await applyChanges({
+    boardItems: [{ id: newId('bi'), board_id: boardId, ref_type: ref.type, ref_id: ref.id, x: at.x, y: at.y, w: 340, h: 0, z, updated_at: nowIso() }],
+  })
+  return 'added'
 }

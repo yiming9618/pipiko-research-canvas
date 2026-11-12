@@ -203,7 +203,7 @@ for (const size of sizes) {
   check(`${tag} 基础默认折叠`, !(await page.locator('.basics').evaluate((el) => el.open)))
   check(`${tag} 重点区块 4 个（含未知类型）`, (await page.locator('section.block').count()) === 4)
   check(`${tag} 理解栏 2 条 AI 整理`, (await page.locator('.source[data-source=ai]').count()) === 2)
-  check(`${tag} 被引用于 11/10（可点）`, await page.locator('.cited a', { hasText: '11/10' }).isVisible())
+  check(`${tag} 被引用于：写着引用它的画板，可点`, (await page.locator('.cited a').first().getAttribute('href')).startsWith('#/board/'))
   check(`${tag} 读过 2 次：11/1、12/3`, await page.getByText('读过 2 次：11/1、12/3').isVisible())
 
   // layout: rail beside on wide, below on phone
@@ -342,8 +342,8 @@ for (const size of sizes) {
   check(`${tag} AI 提到的条目用 Crossref 补全了标题`, true)
   await page.screenshot({ path: `${out}/${size.name}-lib-6-ai-want.png`, fullPage: true })
   await aiItem.getByRole('link', { name: '11/9' }).click()
-  await page.getByRole('heading', { name: '11/9', level: 1 }).waitFor()
-  check(`${tag} 点来源跳到那一天的画板`, true)
+  await page.locator('.node.cover', { hasText: '提到新论文的记录' }).waitFor()
+  check(`${tag} 点来源跳到那份记录所在的画板`, true)
 
   await page.goto(`${url}#/library`)
   await add({ 标题: 'slow technology reflection draft' }, '想看')

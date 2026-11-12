@@ -127,36 +127,28 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   const tag = `[${size.name}]`
 
   await page.goto(url)
-  for (const md of [PAPER, RESEARCH_OTHER_DAY, RESEARCH_1, RESEARCH_2]) {
+  for (const md of [PAPER, RESEARCH_1, RESEARCH_2, RESEARCH_OTHER_DAY] /* the first import sits at the left edge, where the editing steps below work */) {
     await page.locator('.md-input').fill(md)
     await page.getByRole('button', { name: '放进去' }).click()
     await page.locator('.result').waitFor()
     await page.waitForFunction(() => document.querySelector('.md-input').value === '')
   }
 
-  // ── open the board: lands on the latest month
-  await page.getByRole('link', { name: '画板' }).click()
-  await page.getByRole('heading', { name: '11 月', level: 1 }).waitFor()
-  await page.locator('.day-tile').first().waitFor()
-  check(`${tag} 打开画板，落在最近有记录的月份`, (await page.locator('.day-tile').count()) === 2)
-  const tile = page.locator('.day-tile[data-zoom="2026-11-10"]')
-  check(`${tag} 日期块：日期 + 标题 + 卡片颜色缩影`, (await tile.locator('.thumb span').count()) === 6 && (await tile.getByText('笔记本结构定下来 等 2 份').isVisible()))
-  check(`${tag} 日期块上有"读了 [论文]"`, await tile.getByText('读了 Living Media Interfaces').isVisible())
-  const periods = await page.locator('.period').evaluateAll((els) => els.map((e) => `${e.querySelector('h2').textContent}:${e.querySelectorAll('.day-tile').length}`))
-  check(`${tag} 按上旬 / 中旬 / 下旬排`, periods.join(' ') === '上旬:2 中旬:0 下旬:0', periods.join(' '))
-  if (size.isMobile) {
-    const cols = await page.locator('.day-tile').evaluateAll((els) => new Set(els.map((e) => Math.round(e.getBoundingClientRect().left))).size)
-    check(`${tag} 手机上月视图是单列`, cols === 1)
-  }
-  await page.screenshot({ path: `${out}/${size.name}-time-1-month.png` })
-  await tile.click()
-  await page.getByRole('heading', { name: '11/10', level: 1 }).waitFor()
+  // ── open the board from the list of boards
+  await page.getByRole('link', { name: '画板', exact: true }).click()
+  await page.getByRole('heading', { name: '画板', level: 1 }).waitFor()
+  const boardTile = page.locator('.board-tile-main')
+  await boardTile.first().waitFor()
+  check(`${tag} 画板列表：三份导入都进了同一块画板`, (await boardTile.count()) === 1 && (await boardTile.locator('.thumb span').count()) === 7, `${await boardTile.count()} 块`)
+  await page.screenshot({ path: `${out}/${size.name}-board-0-list.png` })
+  await boardTile.first().click()
   await page.locator('.node.card').first().waitFor()
   await page.waitForTimeout(500)
-  check(`${tag} 点日期块进入那一天`, true)
+  check(`${tag} 点画板进入`, true)
 
   const box = (sel) => page.locator(sel).first().boundingBox()
-  check(`${tag} 同一天两份：2 个封面、6 张卡片`, (await page.locator('.node.cover').count()) === 2 && (await page.locator('.node.card').count()) === 6)
+  check(`${tag} 三份记录各有封面，共 7 张卡片`, (await page.locator('.node.cover').count()) === 3 && (await page.locator('.node.card').count()) === 7, `${await page.locator('.node.cover').count()} 封面 ${await page.locator('.node.card').count()} 卡片`)
+  check(`${tag} 每张卡片上有自己的日期`, (await page.locator('.node.card .card-date').count()) === 7 && (await page.locator('.node.card .card-date', { hasText: '11/4' }).count()) === 1)
   check(`${tag} 没有"暂无"之类的空卡片`, (await page.getByText('暂无').count()) === 0)
 
   const overlaps = await page.evaluate(() => {
@@ -173,7 +165,6 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   await page.screenshot({ path: `${out}/${size.name}-board-1-view.png` })
 
   check(`${tag} 活动标签在封面上`, await page.locator('.node.cover .key-tag', { hasText: '讨论' }).isVisible())
-  check(`${tag} 读了 [论文] 的标记`, await page.getByRole('link', { name: '读了 Living Media Interfaces' }).isVisible())
 
   // ── citation: matched one is a tag, unmatched stays as text
   check(`${tag} 匹配到的引用变成标签`, (await page.locator('a.cite').count()) === 1)
@@ -185,19 +176,10 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   await page.locator('.cite-pop').getByRole('link', { name: '打开论文页' }).click()
   await page.getByRole('heading', { name: 'Living Media Interfaces', level: 1 }).waitFor()
   check(`${tag} 从预览跳到论文页`, true)
-  await page.locator('.cited a', { hasText: '11/10' }).click()
-  await page.getByRole('heading', { name: '11/10', level: 1 }).waitFor()
+  await page.locator('.cited a').first().click()
+  await page.getByRole('heading', { name: '未命名画板', level: 1 }).waitFor()
   check(`${tag} 论文页"被引用于"跳回画板`, true)
   await page.locator('.node.card').first().waitFor()
-
-  // ── previous day
-  await page.getByRole('link', { name: '往前：11/4' }).click()
-  await page.getByRole('heading', { name: '11/4', level: 1 }).waitFor()
-  await page.getByText('回到最初的共在。').waitFor()
-  check(`${tag} 切到前一个有记录的日子`, true)
-  await page.goBack()
-  await page.locator('.node.card').first().waitFor()
-  await page.waitForTimeout(300)
 
   // ── pan by dragging the background (view mode)
   const before = await box('.node.cover')
@@ -244,13 +226,12 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
 
   if (size.isMobile) {
     check(`${tag} 手机上只看不编辑（没有"编排"按钮）`, (await page.getByRole('button', { name: '编排' }).count()) === 0)
-    check(`${tag} 手机上未编辑的画板是单列`, before.width < 380)
   } else {
     // ── edit mode
     await page.reload()
     await page.locator('.node.card').first().waitFor()
     await page.waitForTimeout(300)
-    check(`${tag} 未编辑时显示"模板布局 · 未编辑"`, await page.getByText('模板布局 · 未编辑').isVisible())
+    check(`${tag} 标题旁写着卡片数`, await page.getByText('7 张卡片').isVisible())
     check(`${tag} 左侧是论文库边栏`, await page.locator('.board-side .liblist').isVisible())
     await page.getByRole('button', { name: '编排' }).click()
 
@@ -263,7 +244,6 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
     await page.waitForTimeout(300)
     const c1 = await card.boundingBox()
     check(`${tag} 拖动卡片`, Math.abs(c1.x - c0.x - 40) < 3 && Math.abs(c1.y - c0.y - 80) < 3, `移动 ${Math.round(c1.x - c0.x)}, ${Math.round(c1.y - c0.y)}`)
-    check(`${tag} 状态变成"已编排"`, await page.getByText('已编排').isVisible())
 
     // resize by the handle
     const handle = await page.locator('.handle').boundingBox()
@@ -339,7 +319,7 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
       (await page.locator('.node.card', { hasText: '研究卡片分五种就够了。' }).count()) === 1
     check(`${tag} 刷新后编辑都还在`, kept)
     await page.screenshot({ path: `${out}/${size.name}-board-5-reloaded.png` })
-    await page.locator('.node.cover').first().getByRole('button', { name: '原文' }).click()
+    await page.locator('.node.cover', { hasText: '笔记本结构定下来' }).getByRole('button', { name: '原文' }).click()
     const rawOk = await page
       .locator('dialog .raw', { hasText: '研究卡片要分成哪几种？' })
       .waitFor({ timeout: 5000 })
@@ -357,98 +337,6 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
     check(`${tag} "恢复原样"回到模板位置和原文`, Math.abs(c3.width - c0.width) < 3)
     await page.screenshot({ path: `${out}/${size.name}-board-4-final.png` })
   }
-
-  // ── year / month / day
-  const vpNow = page.viewportSize()
-  const pinch = async (cx, cy, from, to) => {
-    const client = await ctx.newCDPSession(page)
-    const pts = (d) => [{ x: cx - d, y: cy, id: 1 }, { x: cx + d, y: cy, id: 2 }]
-    await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts(from) })
-    for (let i = 1; i <= 4; i++) {
-      await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts(from + ((to - from) * i) / 4) })
-    }
-    await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
-  }
-  const zoom = async (cx, cy, direction) => {
-    if (size.isMobile) return pinch(cx, cy, direction === 'in' ? 30 : 90, direction === 'in' ? 90 : 20)
-    await page.mouse.move(cx, cy)
-    await page.keyboard.down('Control')
-    // deltas are halved on a 2x screen, so send a generous pinch
-    for (let i = 0; i < 12; i++) await page.mouse.wheel(0, direction === 'in' ? -12 : 30)
-    await page.keyboard.up('Control')
-  }
-  const centre = async (sel) => {
-    await page.locator(sel).scrollIntoViewIfNeeded()
-    await page.waitForTimeout(150)
-    const b = await page.locator(sel).boundingBox()
-    return [b.x + b.width / 2, b.y + b.height / 2]
-  }
-
-  await page.goto(`${url}#/board/2026-11-10`)
-  await page.locator('.node.card').first().waitFor()
-  await page.getByRole('link', { name: '11 月', exact: true }).click()
-  await page.getByRole('heading', { name: '11 月', level: 1 }).waitFor()
-  await page.getByRole('link', { name: '2026', exact: true }).click()
-  await page.getByRole('heading', { name: '2026', level: 1 }).waitFor()
-  check(`${tag} 面包屑：日 → 月 → 年`, true)
-  const thisMonth = (await page.evaluate(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }))
-  const expectTiles = thisMonth.startsWith('2026') && thisMonth !== '2026-11' ? 2 : 1
-  check(`${tag} 年视图只显示有内容的月份（和当前月份）`, (await page.locator('.month-tile').count()) === expectTiles, `${await page.locator('.month-tile').count()} 个`)
-  const nov = page.locator('.month-tile[data-zoom="2026-11"]')
-  check(`${tag} 月份块显示最多 3 条标题`, (await nov.locator('.tile-title').count()) === 3 && (await nov.getByText('和老师讨论方向').isVisible()))
-  check(`${tag} 年视图里每个月份块都能点进去`, (await page.locator('.month-tile:not(a[href])').count()) === 0)
-  await page.waitForTimeout(400)
-  await page.screenshot({ path: `${out}/${size.name}-time-2-year.png` })
-
-  await zoom(...(await centre('.month-tile[data-zoom="2026-11"]')), 'in')
-  await page.getByRole('heading', { name: '11 月', level: 1 }).waitFor()
-  check(`${tag} 年视图${size.isMobile ? '双指放大' : '触控板放大'} → 进入那个月`, true)
-  await page.waitForTimeout(400)
-
-  await zoom(...(await centre('.day-tile[data-zoom="2026-11-10"]')), 'in')
-  await page.getByRole('heading', { name: '11/10', level: 1 }).waitFor()
-  await page.locator('.node.card').first().waitFor()
-  check(`${tag} 月视图放大 → 进入那一天`, true)
-  await page.waitForTimeout(500)
-
-  await zoom(vpNow.width - 120, vpNow.height / 2, 'out')
-  await page.getByRole('heading', { name: '11 月', level: 1 }).waitFor()
-  check(`${tag} 日视图缩到最小后继续捏 → 回到月`, true)
-  await page.waitForTimeout(400)
-
-  await zoom(vpNow.width - 120, vpNow.height / 2, 'out')
-  await page.getByRole('heading', { name: '2026', level: 1 }).waitFor()
-  check(`${tag} 月视图缩小 → 回到年`, true)
-  await page.waitForTimeout(600)
-
-  // back in again from the same spot, which is not on any month tile: the nearest month opens
-  await zoom(vpNow.width - 120, vpNow.height / 2, 'in')
-  await page.getByRole('heading', { name: /月$/, level: 1 }).waitFor()
-  check(`${tag} 缩小到年之后，原地再放大 → 回到月份（不用对准月份块）`, true)
-  await page.waitForTimeout(600)
-  await zoom(vpNow.width - 120, vpNow.height / 2, 'out')
-  await page.getByRole('heading', { name: '2026', level: 1 }).waitFor()
-  await page.waitForTimeout(600)
-  await page.locator('.month-tile[data-zoom="2026-11"]').click()
-  await page.getByRole('heading', { name: '11 月', level: 1 }).waitFor()
-  check(`${tag} 年视图里点月份块 → 进入那个月`, true)
-  await page.waitForTimeout(400)
-  await page.getByRole('link', { name: '2026', exact: true }).click()
-  await page.getByRole('heading', { name: '2026', level: 1 }).waitFor()
-  check(`${tag} 面包屑再回到年`, true)
-
-  await page.goBack()
-  await page.getByRole('heading', { name: '11 月', level: 1 }).waitFor()
-  check(`${tag} 浏览器后退回到上一层`, true)
-
-  await settled(page)
-  const smallNav = await page.evaluate(() =>
-    [...document.querySelectorAll('.board-head a, .day-tile, .blank-day, .month-tile')]
-      .map((el) => ({ t: (el.textContent || el.getAttribute('aria-label') || '').trim().slice(0, 10), r: el.getBoundingClientRect() }))
-      .filter((x) => x.r.width > 0 && (x.r.height < 44 || x.r.width < 44))
-      .map((x) => `${x.t} ${Math.round(x.r.width)}×${Math.round(x.r.height)}`),
-  )
-  check(`${tag} 面包屑和日期块 ≥ 44px`, smallNav.length === 0, smallNav.join(', '))
 
   check(`${tag} 没有报错`, errors.length === 0, errors.join(' | '))
   await ctx.close()

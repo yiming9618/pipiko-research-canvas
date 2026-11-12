@@ -3,6 +3,8 @@
 
 import { KIND_COLOR } from '../domain/colors'
 import type { Doc, TypeNames } from '../domain/search'
+import { boardHref } from '../domain/boards'
+import { homeBoardId, recordBoardId } from '../domain/migrate'
 import { db } from './db'
 
 export interface SearchData {
@@ -13,7 +15,7 @@ export interface SearchData {
 const day = (iso: string) => iso.slice(0, 10)
 
 export async function loadSearchData(): Promise<SearchData> {
-  const [papers, blocks, types, comments, records, cards, piles, imports, boardItems] = await Promise.all([
+  const [papers, blocks, types, comments, records, cards, piles, imports, boardItems, boards] = await Promise.all([
     db.papers.filter((p) => !p.deleted).toArray(),
     db.blocks.filter((b) => !b.deleted).toArray(),
     db.types.filter((t) => !t.deleted).toArray(),
@@ -23,6 +25,7 @@ export async function loadSearchData(): Promise<SearchData> {
     db.piles.filter((p) => !p.deleted).toArray(),
     db.imports.filter((e) => !e.deleted && !e.undone).toArray(),
     db.boardItems.filter((i) => !i.deleted && i.ref_type === 'card' && i.text_override !== undefined).toArray(),
+    db.boards.filter((b) => !b.deleted).toArray(),
   ])
 
   const importDate = new Map(imports.map((e) => [e.id, e.date]))
@@ -96,12 +99,14 @@ export async function loadSearchData(): Promise<SearchData> {
       body: [r.summary, r.preamble_md].filter(Boolean).join('\n'),
       label: '记录',
       color: 'plain',
-      href: `#/board/${r.date}`,
+      href: boardHref(recordBoardId(r)),
       ref: { type: 'cover', id: r.id },
     })
   }
 
-  const edited = new Map(boardItems.filter((i) => i.board_id.startsWith('day:')).map((i) => [i.ref_id, i.text_override!]))
+  // the changed wording lives on the card's own board
+  const homeOf = new Map(cards.map((c) => [c.id, homeBoardId(c)]))
+  const edited = new Map(boardItems.filter((i) => homeOf.get(i.ref_id) === i.board_id).map((i) => [i.ref_id, i.text_override!]))
   for (const c of cards) {
     const record = recordById.get(c.record_id)
     docs.push({
@@ -115,7 +120,7 @@ export async function loadSearchData(): Promise<SearchData> {
       body: edited.has(c.id) ? `${edited.get(c.id)}\n${c.body_md}` : c.body_md,
       label: c.kind === '其他' ? c.heading : c.kind,
       color: KIND_COLOR[c.kind],
-      href: `#/board/${c.date}`,
+      href: boardHref(homeBoardId(c), c.id),
       ref: { type: 'card', id: c.id },
     })
   }
@@ -131,7 +136,22 @@ export async function loadSearchData(): Promise<SearchData> {
       label: '堆',
       color: 'pink',
       href: `#/pile/${p.id}`,
-      ref: { type: 'pile', id: p.id },
+      ref: null,
+    })
+  }
+
+  for (const b of boards) {
+    docs.push({
+      key: `board:${b.id}`,
+      kind: 'board',
+      dates: [day(b.created_at)],
+      title: b.name,
+      keywords: '',
+      body: '',
+      label: '画板',
+      color: 'plain',
+      href: boardHref(b.id),
+      ref: null,
     })
   }
 

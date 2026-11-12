@@ -83,6 +83,10 @@ interface Props {
 export interface CanvasApi {
   /** Board coordinates of the middle of what is visible. */
   center: () => { x: number; y: number }
+  /** A point on the screen → the board position under it. */
+  toBoard: (clientX: number, clientY: number) => { x: number; y: number }
+  /** Brings a rectangle of the board to the middle of the view, at a readable size. */
+  focusOn: (x: number, y: number, w: number, h: number) => void
 }
 
 const MIN_K = 0.25
@@ -230,9 +234,14 @@ export function Canvas(props: Props) {
     const minY = Math.min(...nodes.map((n) => n.y))
     const width = maxX - minX
     const margin = el.clientWidth < 600 ? 16 : 40
-    const k = Math.max(MIN_K, Math.min(1, (el.clientWidth - margin * 2) / width))
-    fitK.current = k
-    setView({ x: (el.clientWidth - width * k) / 2 - minX * k, y: topInset + 8 - minY * k, k })
+    const whole = Math.max(MIN_K, Math.min(1, (el.clientWidth - margin * 2) / width))
+    // zooming out can still go as far as showing everything
+    fitK.current = whole
+    // A board with several imports side by side is very wide: do not open it as a row of specks.
+    // Start readable, at its left edge; the rest is a pan away.
+    const k = Math.max(whole, el.clientWidth < 600 ? 0.5 : 0.7)
+    const x = k === whole ? (el.clientWidth - width * k) / 2 - minX * k : margin - minX * k
+    setView({ x, y: topInset + 8 - minY * k, k })
   }, [nodes, props.fitKey, setView, topInset])
 
   useEffect(() => {
@@ -244,8 +253,21 @@ export function Canvas(props: Props) {
         if (!el) return { x: 0, y: 0 }
         return { x: (el.clientWidth / 2 - v.x) / v.k, y: (el.clientHeight / 2 - v.y) / v.k }
       },
+      toBoard: (clientX, clientY) => {
+        const el = viewportRef.current
+        const v = viewRef.current
+        if (!el) return { x: 0, y: 0 }
+        const r = el.getBoundingClientRect()
+        return { x: (clientX - r.left - v.x) / v.k, y: (clientY - r.top - v.y) / v.k }
+      },
+      focusOn: (x, y, w, h) => {
+        const el = viewportRef.current
+        if (!el) return
+        const k = Math.max(viewRef.current.k, el.clientWidth < 600 ? 0.6 : 0.8)
+        setView({ x: el.clientWidth / 2 - (x + w / 2) * k, y: Math.max(topInset + 16, el.clientHeight / 2 - (h / 2) * k) - y * k, k })
+      },
     }
-  }, [props.apiRef])
+  }, [props.apiRef, setView, topInset])
 
   const local = (e: { clientX: number; clientY: number }) => {
     const r = viewportRef.current!.getBoundingClientRect()

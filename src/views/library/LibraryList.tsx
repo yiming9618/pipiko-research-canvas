@@ -6,7 +6,9 @@ import { markRead, retryLookup } from '../../store/paperActions'
 import { shortDate } from '../../domain/importer'
 import { AddPaperForm, EditPaperForm } from './PaperForm'
 import { AddToDiscussion } from '../discussions/AddToDiscussion'
-import { DRAG_TYPE } from '../../store/pileActions'
+import { DRAG_TYPE } from '../../ui/drag'
+import { boardHref } from '../../domain/boards'
+import { recordBoardId } from '../../domain/migrate'
 import { IconChevron, IconEdit, IconPlus } from '../../ui/icons'
 
 const UNCATEGORISED = '未分类'
@@ -224,6 +226,11 @@ export function LibraryList({ activeId }: { activeId?: string }) {
 /** Where an AI-mentioned entry came from: the days whose record named it. */
 function Sources({ paper }: { paper: Paper }) {
   const list = paper.mentioned_in ?? []
+  // each source is a research record; the link goes to the board that record is on
+  const where = useLiveQuery(async () => {
+    const records = await db.records.bulkGet(list.map((m) => m.record_id))
+    return new Map(records.filter((r) => !!r).map((r) => [r!.id, boardHref(recordBoardId(r!))]))
+  }, [list.map((m) => m.record_id).join(',')])
   if (list.length === 0) return null
   return (
     <span className="want-meta">
@@ -231,7 +238,7 @@ function Sources({ paper }: { paper: Paper }) {
       {list.map((m, i) => (
         <span key={m.record_id}>
           {i > 0 && '、'}
-          <a href={`#/board/${m.date}`}>{shortDate(m.date)}</a>
+          <a href={where?.get(m.record_id) ?? '#/boards'}>{shortDate(m.date)}</a>
         </span>
       ))}
     </span>

@@ -107,7 +107,7 @@ check('[phone] 同步表单的输入框和按钮 ≥ 44px', small === 0)
 await connect(phone)
 await synced(phone)
 const paths = [...git.trees.get(git.commits.get(git.head).tree).keys()]
-check('[phone] 空仓库也能连上，连接前的内容全部上传', paths.some((p) => p.startsWith('data/papers/')) && paths.some((p) => p.startsWith('data/days/')) && paths.some((p) => p.startsWith('raw/')), `${paths.length} 个文件`)
+check('[phone] 空仓库也能连上，连接前的内容全部上传', paths.some((p) => p.startsWith('data/papers/')) && paths.some((p) => p.startsWith('data/cards/')) && paths.includes('data/board-list.json') && paths.some((p) => p.startsWith('raw/')), `${paths.length} 个文件`)
 check('[phone] 令牌没有写进数据仓库', ![...git.blobs.values()].some((b) => Buffer.from(b, 'base64').toString().includes('good-token')))
 await phone.screenshot({ path: `${out}/phone-sync-2-connected.png`, fullPage: true })
 
@@ -118,10 +118,14 @@ await synced(ipad)
 await ipad.goto(`${url}#/library`)
 await ipad.getByText('示例论文标题一').first().waitFor()
 check('[ipad] 连接后收到手机上的论文', true)
-await ipad.goto(`${url}#/board`)
-await ipad.waitForTimeout(600)
+await ipad.goto(`${url}#/boards`)
+await ipad.locator('.board-tile-main').first().waitFor()
 await ipad.screenshot({ path: `${out}/ipad-sync-2b-board.png` })
-check('[ipad] 画板上有手机导入的那一天', (await ipad.locator('[href*="#/board/2026-"], [data-day], .day-tile').count()) > 0, await ipad.evaluate(() => document.querySelector('.timeview')?.innerHTML.slice(0, 300) ?? 'no timeview'))
+check('[ipad] 收到手机上的画板，里面有卡片', (await ipad.locator('.board-tile-main .thumb span').count()) > 0)
+await ipad.goto(`${url}#/time`)
+await ipad.locator('.day-tile').first().waitFor()
+check('[ipad] 时间视图里有手机导入的那些天', (await ipad.locator('.day-tile').count()) === 2)
+await ipad.goto(`${url}#/boards`)
 
 // ── ipad makes a pile; it reaches the phone without anyone pressing sync
 const before = git.head
@@ -137,7 +141,7 @@ for (let i = 0; i < 40 && git.head === before; i++) await ipad.waitForTimeout(25
 check('[ipad] 改动提交到了仓库', git.head !== before)
 await phone.getByRole('button', { name: '现在同步' }).click()
 await phone.getByText(/收到 \d+ 条新内容/).waitFor()
-await phone.goto(`${url}#/board`)
+await phone.goto(`${url}#/boards`)
 await phone.locator('.pile-tile', { hasText: '从 iPad 来' }).waitFor()
 check('[phone] 收到 iPad 上新建的堆', true)
 

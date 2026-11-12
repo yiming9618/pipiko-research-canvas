@@ -5,11 +5,12 @@ import { IconChat, IconSettings } from './icons'
 import { SearchBox } from './SearchBox'
 import { useExpiryReminder, useSync } from '../views/settings/SyncSection'
 
-type Place = 'home' | 'board' | 'library' | 'settings' | 'discussions'
+type Place = 'home' | 'board' | 'time' | 'library' | 'settings' | 'discussions'
 
 const LINKS: { place: Place; href: string; label: string }[] = [
   { place: 'home', href: '#/', label: '主页' },
-  { place: 'board', href: '#/board', label: '画板' },
+  { place: 'board', href: '#/boards', label: '画板' },
+  { place: 'time', href: '#/time', label: '时间' },
   { place: 'library', href: '#/library', label: '论文库' },
 ]
 
