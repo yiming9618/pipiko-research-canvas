@@ -21,6 +21,9 @@ function makeStore() {
     assets: [],
     discussions: [],
     discussionItems: [],
+    boards: [],
+    boardUse: [],
+    fields: [],
   }
   const ctx = (kindHint: 'paper' | 'research'): ImportContext => ({
     papers: tables.papers,

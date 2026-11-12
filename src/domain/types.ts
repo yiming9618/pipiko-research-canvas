@@ -70,6 +70,11 @@ export interface Paper extends Synced {
   /** The "基础" section as written. Empty string when not filled yet. */
   basics_md: string
   created_at: ISODateTime
+  /**
+   * The paper's field (领域). Absent on papers from before fields existed: those are
+   * matched through `category`. An empty string means "未分类", chosen on purpose.
+   */
+  field_id?: string
   /** "为什么想看", one line, editable. Absent on entries from before this field existed. */
   why?: string
   /** Who put it in the library. Absent = 'me' (older entries, and papers that came in through a paper import). */
@@ -127,6 +132,10 @@ export interface ResearchRecord extends Synced {
   /** Text that came before the first heading. Kept, never dropped. */
   preamble_md: string
   import_id: string
+  /** The board it is on. Absent on records from the time of daily boards: those belong to the board of their date. */
+  board_id?: string
+  /** Where this import was put down on its board. Its cover and cards are laid out from here. */
+  origin?: { x: number; y: number }
 }
 
 export const CARD_KINDS = ['发现', '实验', '问题', '思考', '下一步'] as const
@@ -135,7 +144,15 @@ export type CardKind = (typeof CARD_KINDS)[number] | '其他'
 export interface Card extends Synced {
   /** The record it came in with. Empty for a card written by hand on the board. */
   record_id: string
+  /** The card's own date: where it sits in the time view. A hand-written card's date can be changed. */
   date: ISODate
+  /** The board it is on. Absent on cards from the time of daily boards: see `homeBoardId`. */
+  board_id?: string
+  /**
+   * Only on such an older card whose date was changed afterwards: the date it had
+   * at first. Its board and its file in the data repo keep following this one.
+   */
+  home_date?: ISODate
   kind: CardKind
   /** Heading exactly as written (matters for kind '其他'). */
   heading: string
@@ -148,7 +165,38 @@ export interface Card extends Synced {
 /** A card the person wrote on the board, as opposed to one that came from pasted Markdown. */
 export const isManualCard = (c: Pick<Card, 'import_id'>) => !c.import_id
 
-/** Board ids: `day:2026-11-10` or `pile:<pile id>`. */
+/**
+ * A board with a name and a subject, like a canvas in Freeform.
+ * Ids: `board_…` for new ones. Boards carried over from before keep the id their
+ * contents already point at: `day:2026-11-10` (a former daily board) or
+ * `pile:<pile id>` (what used to be laid out inside a pile).
+ */
+export interface Board extends Synced {
+  name: string
+  /** Never changes. */
+  created_at: ISODateTime
+  /** The pile (folder) it is in, if any. A board is in at most one. */
+  pile_id?: string
+}
+
+/**
+ * When a board was last opened or edited. Kept apart from `Board` on purpose:
+ * merging is per entry, so a device that merely opened a board must not be able
+ * to overwrite a rename made on another device.
+ */
+export interface BoardUse extends Synced {
+  /** Same as the board's id. */
+  id: string
+  last_used_at: ISODateTime
+}
+
+/** A paper's field (领域). A paper has at most one. */
+export interface Field extends Synced {
+  name: string
+  created_at: ISODateTime
+}
+
+/** Board ids: see `Board`. */
 export type BoardRefType = 'cover' | 'card' | 'paper' | 'pile' | 'image' | 'text'
 
 /** Only exists for things the user moved, resized, edited or added. */
@@ -180,6 +228,8 @@ export interface Stroke extends Synced {
   points: number[]
   color: string
   size: number
+  /** 'marker' = wide and see-through. Absent = an ordinary pen stroke. */
+  pen?: 'pen' | 'marker'
 }
 
 export interface Pile extends Synced {
@@ -195,13 +245,13 @@ export interface Discussion extends Synced {
   archived_at?: ISODateTime
 }
 
-export type DiscussionRefType = 'paper' | 'card' | 'day' | 'pile'
+export type DiscussionRefType = 'paper' | 'card' | 'day' | 'pile' | 'board'
 
 /** One thing in a discussion box. Always a reference; the original is never copied. */
 export interface DiscussionItem extends Synced {
   discussion_id: string
   ref_type: DiscussionRefType
-  /** Paper id, card id, a date (YYYY-MM-DD) for a whole day's board, or pile id. */
+  /** Paper id, card id, a date (YYYY-MM-DD, i.e. the board `day:<date>`), pile id, or board id. */
   ref_id: string
   added_at: ISODateTime
 }
@@ -234,6 +284,9 @@ export interface Tables {
   assets: Asset
   discussions: Discussion
   discussionItems: DiscussionItem
+  boards: Board
+  boardUse: BoardUse
+  fields: Field
 }
 
 export type TableName = keyof Tables

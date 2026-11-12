@@ -16,7 +16,7 @@ import { copyText } from '../../ui/clipboard'
 import { IconBack, IconChevron, IconClose, IconCopy, IconPlus } from '../../ui/icons'
 import { TopNav } from '../../ui/TopNav'
 
-const KIND_WORD: Record<DiscussionItem['ref_type'], string> = { paper: '篇论文', card: '张卡片', day: '天的画板', pile: '个堆' }
+const KIND_WORD: Record<DiscussionItem['ref_type'], string> = { paper: '篇论文', card: '张卡片', day: '天的画板', pile: '个堆', board: '块画板' }
 
 function summary(items: DiscussionItem[]): string {
   if (items.length === 0) return '还是空的'

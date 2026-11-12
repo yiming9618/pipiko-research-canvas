@@ -18,11 +18,15 @@ export function fileOf(table: TableName, e: Synced): string {
       return `data/papers/${x.paper_id}.json`
     case 'records':
     case 'cards':
-      return `data/days/${x.date}.json`
+      // Both keys are fixed for the life of the entry, so an entry never moves between files:
+      // a card on a subject board is filed by that board; an older one by the date it had at first.
+      return typeof x.board_id === 'string' && x.board_id !== ''
+        ? `data/cards/${boardFile(x.board_id)}.json`
+        : `data/days/${x.home_date ?? x.date}.json`
     case 'boardItems':
     case 'connectors':
     case 'strokes':
-      return `data/boards/${String(x.board_id).replace(':', '-')}.json`
+      return `data/boards/${boardFile(String(x.board_id))}.json`
     case 'piles':
       return 'data/piles.json'
     case 'types':
@@ -33,8 +37,16 @@ export function fileOf(table: TableName, e: Synced): string {
     case 'discussions':
     case 'discussionItems':
       return 'data/discussions.json'
+    case 'boards':
+    case 'boardUse':
+      return 'data/board-list.json'
+    case 'fields':
+      return 'data/fields.json'
   }
 }
+
+/** A board id as a file name (`day:2026-11-10` → `day-2026-11-10`). */
+const boardFile = (boardId: string) => boardId.replace(':', '-')
 
 const TABLES_BY_PREFIX: [string, TableName[]][] = [
   ['data/imports/', ['imports']],
@@ -45,6 +57,9 @@ const TABLES_BY_PREFIX: [string, TableName[]][] = [
   ['data/settings.json', ['types', 'settings']],
   ['data/assets.json', ['assets']],
   ['data/discussions.json', ['discussions', 'discussionItems']],
+  ['data/cards/', ['records', 'cards']],
+  ['data/board-list.json', ['boards', 'boardUse']],
+  ['data/fields.json', ['fields']],
 ]
 
 export function tablesIn(path: string): TableName[] {

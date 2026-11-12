@@ -3243,3 +3243,10 @@ select,
     grid-column: 2;
   }
 }
+
+.before-boards {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}

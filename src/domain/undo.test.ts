@@ -22,6 +22,9 @@ function makeStore() {
     assets: [],
     discussions: [],
     discussionItems: [],
+    boards: [],
+    boardUse: [],
+    fields: [],
   }
   const apply = (changes: Changes) => {
     for (const key of Object.keys(changes) as TableName[]) {

@@ -7,6 +7,7 @@ import { db, todayLocal } from '../../store/db'
 import { sampleImports } from '../../dev/samples'
 import { runImport } from '../../store/actions'
 import { saveType } from '../../store/paperActions'
+import { backupBeforeBoards, currentBoardCheck, deleteBackupBeforeBoards, lastMigrationReport } from '../../store/migration'
 import { IconDownload, IconUndo, IconUpload } from '../../ui/icons'
 import { TopNav } from '../../ui/TopNav'
 import { useUndo } from '../../ui/useUndo'
@@ -100,6 +101,54 @@ function Samples() {
         {status}
       </p>
     </section>
+  )
+}
+
+/** The backup taken automatically just before the move to subject boards, and how that move went. */
+function BeforeBoards() {
+  const state = useLiveQuery(async () => ({
+    backup: await backupBeforeBoards(),
+    report: await lastMigrationReport(),
+    check: await currentBoardCheck(),
+  }))
+  if (!state || (!state.backup && !state.report)) return null
+  const { backup, report, check } = state
+  return (
+    <div className="before-boards">
+      {report && !report.ok && (
+        <p className="status-line is-error" role="alert">
+          画板的升级没有执行：迁移前的备份没能存上（{report.error}）。这台设备上的内容没有任何改动，下次打开会再试。
+        </p>
+      )}
+      {check.total > 0 && (
+        <p className="status-line is-error" role="alert">
+          有 {check.total} 条内容找不到所属的画板（卡片 {check.cards}、记录 {check.records}、画板上的东西{' '}
+          {check.boardItems + check.connectors + check.strokes}）。它们都还在，没有被删除；请把这句话告诉开发者。
+        </p>
+      )}
+      {backup && (
+        <>
+          <p className="section-note">
+            升级画板之前，这台设备自动存了一份全量备份（{clock(backup.exported_at)}）。它只存在这台设备里，不参与同步。
+          </p>
+          <div className="row-actions">
+            <button type="button" className="btn" onClick={() => downloadJson(backup, `升级画板前-${backup.exported_at.slice(0, 10)}`)}>
+              <IconDownload />
+              下载升级前的备份
+            </button>
+            <button
+              type="button"
+              className="btn btn-quiet"
+              onClick={() => {
+                if (window.confirm('删除这份升级前的备份？建议先下载一份再删。')) void deleteBackupBeforeBoards()
+              }}
+            >
+              不需要了，删除
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   )
 }
 
@@ -214,6 +263,7 @@ export function Settings() {
         <p className={`status-line${backup?.error ? ' is-error' : ''}`} role="status" aria-live="polite">
           {backup?.text}
         </p>
+        <BeforeBoards />
       </section>
 
       <SyncSection />

@@ -2,6 +2,7 @@
 // decides when a round runs, and publishes a small status for the UI.
 
 import { db, localChangeListeners, nowIso } from '../store/db'
+import { ensureBoards } from '../store/migration'
 import { DexieLocal, forgetSyncMeta, markAllDirty } from './dexieLocal'
 import { syncOnce } from './engine'
 import { GitHubRemote, SyncProblem, type SyncProblemKind } from './github'
@@ -79,6 +80,8 @@ async function round(): Promise<void> {
   set({ phase: 'syncing' })
   try {
     const report = await syncOnce(new DexieLocal(), new GitHubRemote(config), nowIso)
+    // content from a device that has not updated yet may have arrived without its board
+    if (report.pulled > 0) await ensureBoards()
     set({ phase: 'ok', problem: null, lastSyncAt: nowIso(), pulled: report.pulled })
   } catch (err) {
     const problem =

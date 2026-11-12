@@ -8,6 +8,7 @@ import { Toaster } from './ui/toast'
 import { DiscussionPage, DiscussionsPage } from './views/discussions/DiscussionsPage'
 import { initSync } from './sync/controller'
 import { initLookups } from './store/lookup'
+import { ensureBoards } from './store/migration'
 
 function currentRoute(): string {
   return window.location.hash.replace(/^#/, '') || '/'
@@ -22,7 +23,8 @@ export default function App() {
       window.scrollTo(0, 0)
     }
     window.addEventListener('hashchange', onChange)
-    void initSync()
+    // boards first, then sync: what this device has is in place before anything arrives
+    void ensureBoards().then(() => initSync())
     initLookups()
     return () => window.removeEventListener('hashchange', onChange)
   }, [])

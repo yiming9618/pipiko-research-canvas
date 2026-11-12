@@ -3,6 +3,7 @@ import type { ImportEntry, ImportKind } from '../domain/types'
 import { planUndo, type UndoPlan } from '../domain/undo'
 import { applyChanges, db, newId, nowIso, todayLocal } from './db'
 import { runLookups } from './lookup'
+import { ensureBoards } from './migration'
 import { mergeWant } from '../domain/mergeWant'
 
 export async function runImport(raw: string, kindHint: ImportKind): Promise<ImportOutcome> {
@@ -24,6 +25,7 @@ export async function runImport(raw: string, kindHint: ImportKind): Promise<Impo
   })
   if (outcome.stored) {
     await applyChanges(outcome.changes)
+    await ensureBoards()
     void runLookups()
   }
   return outcome
