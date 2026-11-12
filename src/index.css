@@ -1503,7 +1503,8 @@ select,
   cursor: pointer;
 }
 
-.ink path[data-sel] {
+/* ink can be picked up while selecting (and found by the eraser's own hit test); otherwise it never blocks what is under it */
+.canvas[data-tool='select'] .ink path[data-stroke] {
   pointer-events: auto;
   cursor: pointer;
 }
@@ -3553,4 +3554,305 @@ select,
 
 .day-board h2 a {
   min-width: var(--tap);
+}
+
+/* ── board: library sidebar, tucked away by default ──── */
+
+@media (min-width: 1100px) {
+  .board-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.board-body.has-side .board-side {
+  display: block;
+  position: relative;
+  overflow-y: auto;
+  border-right: 1px solid var(--line-soft);
+  background: var(--bg-warm);
+  padding-top: 4px;
+}
+
+.side-open {
+  position: absolute;
+  left: 8px;
+  top: 62px;
+  z-index: 6;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: 0 4px 12px rgba(120, 60, 70, 0.1);
+}
+
+.side-close {
+  position: absolute;
+  right: 10px;
+  top: 6px;
+  z-index: 2;
+}
+
+.side-hint {
+  margin: 0;
+  padding: 14px 56px 0 20px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-soft);
+}
+
+.side-grip {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.side-grip::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  width: 4px;
+  height: 44px;
+  margin-top: -22px;
+  border-radius: 2px;
+  background: var(--line);
+  transition: background var(--fast) ease;
+}
+
+.side-grip:hover::after,
+.side-grip:focus-visible::after {
+  background: var(--accent);
+}
+
+/* phone: the list slides over the board */
+@media (max-width: 759px) {
+  .board-body.has-side .board-side {
+    position: absolute;
+    z-index: 30;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(88vw, 360px);
+    box-shadow: var(--shadow-pop);
+    animation: appear 180ms var(--ease-out) both;
+  }
+
+  .board-body {
+    position: relative;
+  }
+}
+
+.board-side [data-drag] {
+  /* a sideways drag pulls the paper out; up and down still scrolls the list */
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  cursor: grab;
+}
+
+.drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 200;
+  max-width: 260px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  box-shadow: var(--shadow-pop);
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text);
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.is-pointer-dragging {
+  cursor: grabbing;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ── board: tools ────────────────────────────────────── */
+
+.tool:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.tool:disabled:hover {
+  background: transparent;
+}
+
+.lasso {
+  fill: rgba(180, 69, 92, 0.08);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 5;
+  vector-effect: non-scaling-stroke;
+}
+
+.canvas[data-tool='eraser'] {
+  cursor: cell;
+}
+
+.canvas[data-tool='pen'],
+.canvas[data-tool='marker'] {
+  cursor: crosshair;
+}
+
+.sel-bar {
+  max-width: calc(100% - 12px);
+  flex-wrap: wrap;
+  justify-content: center;
+  border-radius: 24px;
+  align-items: center;
+}
+
+.sel-bar .btn-small {
+  min-height: var(--tap);
+  text-decoration: none;
+}
+
+.sel-count {
+  padding: 0 10px 0 14px;
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.ink-colors {
+  position: absolute;
+  left: 50%;
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 76px);
+  z-index: 6;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--shadow-pop);
+}
+
+.ink-color {
+  position: relative;
+  width: var(--tap);
+  height: var(--tap);
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ink-color::after {
+  content: '';
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: inset 0 0 0 1px rgba(43, 34, 36, 0.18);
+  transition: transform var(--fast) ease;
+}
+
+.ink-color[aria-pressed='true']::after {
+  transform: scale(1.25);
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--text);
+}
+
+.ink-custom::after {
+  background: conic-gradient(#d0443c, #e0a100, #3f9657, #3b82c4, #8a5fc7, #d0443c);
+}
+
+.ink-custom input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.dayboard:has(.ink-colors) .tool-hint {
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 136px);
+}
+
+.card-dialog-hint {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-soft);
+}
+
+/* phone: twelve tools do not fit in one row */
+@media (max-width: 759px) {
+  .toolbar {
+    width: calc(100% - 16px);
+    flex-wrap: wrap;
+    justify-content: center;
+    border-radius: 22px;
+    padding: 4px;
+  }
+
+  .toolbar .tool {
+    min-width: 50px;
+    min-height: 48px;
+  }
+
+  .toolbar-gap {
+    display: none;
+  }
+
+  .tool-hint,
+  .ink-colors {
+    bottom: calc(max(16px, env(safe-area-inset-bottom)) + 124px);
+  }
+
+  .dayboard:has(.ink-colors) .tool-hint {
+    display: none;
+  }
+}
+
+/* stepped aside during a drag: out of sight, but still in the page */
+.board-body.has-side .board-side.is-away {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-100%);
+  transition:
+    opacity 120ms ease,
+    transform 160ms ease;
+  animation: none;
+}
+
+/* the grip on a paper row beside a board: hold it and pull in any direction */
+.board-side .paper-row[data-drag] {
+  position: relative;
+  padding-right: 52px;
+}
+
+.row-grip {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  width: var(--tap);
+  height: var(--tap);
+  margin-top: calc(var(--tap) / -2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-soft);
+  touch-action: none;
+  cursor: grab;
 }

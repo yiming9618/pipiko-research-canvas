@@ -64,15 +64,17 @@ export function ToolButton({
   label,
   icon,
   active,
+  disabled,
   onClick,
 }: {
   label: string
   icon: ReactNode
   active?: boolean
+  disabled?: boolean
   onClick: () => void
 }) {
   return (
-    <button type="button" className="tool" aria-pressed={active} onClick={onClick}>
+    <button type="button" className="tool" aria-pressed={active} disabled={disabled} onClick={onClick}>
       {icon}
       <span>{label}</span>
     </button>

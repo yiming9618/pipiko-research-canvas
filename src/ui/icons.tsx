@@ -149,3 +149,51 @@ export const IconChat = () => (
     <path d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-7l-4 4v-4H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" />
   </Icon>
 )
+
+export const IconRedo = () => (
+  <Icon>
+    <path d="M16 5l4 4-4 4" />
+    <path d="M20 9H10a5 5 0 0 0 0 10h3" />
+  </Icon>
+)
+
+export const IconSelect = () => (
+  <Icon>
+    <path d="M5 4l5.500 14 2-5.500 5.500-2L5 4z" />
+    <path d="M15 15l4.500 4.500" />
+  </Icon>
+)
+
+export const IconMarker = () => (
+  <Icon>
+    <path d="M14 4l6 6-8.500 8.500H7.500L5 16l9-12z" />
+    <path d="M4 20h8" />
+  </Icon>
+)
+
+export const IconEraser = () => (
+  <Icon>
+    <path d="M9 19l-4.500-4.500a2 2 0 0 1 0-2.800l7.200-7.200a2 2 0 0 1 2.800 0l5 5a2 2 0 0 1 0 2.800L13 19H9z" />
+    <path d="M9.500 9.500l6 6M13 19h7" />
+  </Icon>
+)
+
+export const IconBook = () => (
+  <Icon>
+    <path d="M5 4.500h9a3 3 0 0 1 3 3V20H8a3 3 0 0 1-3-3V4.500z" />
+    <path d="M5 17a3 3 0 0 1 3-3h9M9 8.500h4.500" />
+  </Icon>
+)
+
+export const IconExport = () => (
+  <Icon>
+    <path d="M12 15V4M8 8l4-4 4 4" />
+    <path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" />
+  </Icon>
+)
+
+export const IconGrip = () => (
+  <Icon>
+    <path d="M9 6h.010M15 6h.010M9 12h.010M15 12h.010M9 18h.010M15 18h.010" strokeWidth="2.4" />
+  </Icon>
+)

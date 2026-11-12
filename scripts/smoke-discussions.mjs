@@ -120,47 +120,45 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   await toastSays('已放进「最近的进展」')
   check(`${tag} 整块画板放进一个新的讨论框`, true)
 
-  // ── choosing several cards (not on the phone)
-  if (!size.isMobile) {
+  // ── choosing several cards with the select tool
+  {
     const cardsOnBoard = page.locator('.node.card')
-    if (size.touch) {
-      // long press on a card starts choosing
-      const box = await cardsOnBoard.first().boundingBox()
-      const x = box.x + box.width / 2
-      const y = box.y + Math.min(box.height / 2, 40)
-      await page.evaluate(([x, y]) => {
-        const el = document.elementFromPoint(x, y)
-        el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch', clientX: x, clientY: y, pointerId: 7 }))
-      }, [x, y])
-      await page.waitForTimeout(700)
-      await page.evaluate(([x, y]) => {
-        const el = document.elementFromPoint(x, y)
-        el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'touch', clientX: x, clientY: y, pointerId: 7 }))
-        el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y }))
-      }, [x, y])
-      await page.getByText('已选 1 张').waitFor()
-      check(`${tag} 长按一张卡片开始选，松手不会马上取消`, true)
+    const first = await cardsOnBoard.first().boundingBox()
+    const at = { x: first.x + first.width / 2, y: first.y + Math.min(first.height / 2, 40) }
+    if (size.isMobile || size.touch) {
+      // a finger held still on a card selects it and shows what can be done
+      const client = await ctx.newCDPSession(page)
+      await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y, id: 1 }] })
+      await page.waitForTimeout(750)
+      await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+      await page.locator('.sel-bar').waitFor()
+      check(`${tag} 长按一张卡片：选中它并弹出操作栏`, (await page.locator('.node.is-selected').count()) === 1)
     } else {
-      await cardsOnBoard.first().click({ button: 'right', position: { x: 30, y: 30 } })
-      await page.getByText('已选 1 张').waitFor()
-      check(`${tag} 右键一张卡片开始选`, true)
+      await page.mouse.click(at.x, at.y, { button: 'right' })
+      await page.locator('.sel-bar').waitFor()
+      check(`${tag} 右键一张卡片：选中它并弹出操作栏`, (await page.locator('.node.is-selected').count()) === 1)
     }
-    await cardsOnBoard.nth(1).click({ position: { x: 30, y: 30 } })
-    await cardsOnBoard.nth(2).click({ position: { x: 30, y: 30 } })
-    await page.getByText('已选 3 张').waitFor({ timeout: 5000 })
-    await cardsOnBoard.nth(2).click({ position: { x: 30, y: 30 } })
-    await page.getByText('已选 2 张').waitFor()
-    check(`${tag} 再点可以加选、取消`, (await page.locator('.node.is-picked').count()) === 2)
-    await page.screenshot({ path: `${out}/${size.name}-disc-2-pick.png` })
-    await page.locator('.pick-bar').getByRole('button', { name: '放进讨论框' }).click()
-    await page.getByRole('button', { name: /霉菌实验卡住了/ }).click()
-    await toastSays('已放进「霉菌实验卡住了」：2 项')
-    check(`${tag} 多选的卡片一次放进讨论框，选择状态结束`, (await page.locator('.pick-bar').count()) === 0)
-
-    await page.getByRole('button', { name: '选卡片' }).click()
-    await page.getByText('点卡片来选').waitFor()
-    await page.locator('.pick-bar').getByRole('button', { name: '取消' }).click()
-    check(`${tag} “选卡片”按钮也能进入选择，可以取消`, (await page.locator('.pick-bar').count()) === 0)
+    const bar = page.locator('.sel-bar')
+    check(`${tag} 操作栏里有：放进讨论框、导出、删除`, (await bar.getByRole('button', { name: '放进讨论框' }).isVisible()) && (await bar.getByRole('button', { name: '导出' }).isVisible()))
+    if (!size.isMobile) {
+      await cardsOnBoard.nth(1).click({ modifiers: ['Shift'], position: { x: 30, y: 30 } })
+      await cardsOnBoard.nth(2).click({ modifiers: ['Shift'], position: { x: 30, y: 30 } })
+      await page.getByText('已选 3 样').waitFor()
+      await cardsOnBoard.nth(2).click({ modifiers: ['Shift'], position: { x: 30, y: 30 } })
+      await page.getByText('已选 2 样').waitFor()
+      check(`${tag} 按住 Shift 再点：加选、取消`, (await page.locator('.node.is-selected').count()) === 2)
+      await page.screenshot({ path: `${out}/${size.name}-disc-2-pick.png` })
+      await bar.getByRole('button', { name: '放进讨论框' }).click()
+      await page.getByRole('button', { name: /霉菌实验卡住了/ }).click()
+      await toastSays('已放进「霉菌实验卡住了」：2 项')
+      check(`${tag} 选中的卡片一次放进讨论框`, true)
+    } else {
+      await bar.getByRole('button', { name: '放进讨论框' }).click()
+      await page.getByRole('button', { name: /霉菌实验卡住了/ }).click()
+      await toastSays('已放进「霉菌实验卡住了」')
+      check(`${tag} 手机上也能把选中的卡片放进讨论框`, true)
+    }
+    await page.getByRole('button', { name: '完成' }).click()
   }
 
   // ── a whole pile

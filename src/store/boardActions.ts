@@ -1,6 +1,7 @@
 // Edits on a board. These never touch the imported cards themselves: positions,
 // sizes, changed wording, connectors, images and ink all live in their own rows.
 
+import { moveStroke } from '../domain/geometry'
 import { hashText } from '../domain/importer'
 import type { BoardItem, BoardRefType, Card, CardKind, Connector, Stroke } from '../domain/types'
 import { applyChanges, db, newId, nowIso } from './db'
@@ -79,11 +80,70 @@ export async function patchConnector(conn: Connector, patch: Partial<Pick<Connec
   await applyChanges({ connectors: [{ ...conn, ...patch, updated_at: nowIso() }] })
 }
 
-export async function addStroke(boardId: string, points: number[], color: string, size: number): Promise<void> {
+export async function addStroke(boardId: string, points: number[], color: string, size: number, pen: 'pen' | 'marker' = 'pen'): Promise<void> {
   // Two decimals are plenty for ink and keep the stored file small.
   const rounded = points.map((n) => Math.round(n * 100) / 100)
   await applyChanges({
-    strokes: [{ id: newId('ink'), board_id: boardId, points: rounded, color, size, updated_at: nowIso() }],
+    strokes: [{ id: newId('ink'), board_id: boardId, points: rounded, color, size, ...(pen === 'marker' ? { pen } : {}), updated_at: nowIso() }],
+  })
+}
+
+/** The eraser: whole strokes, all of one pass in one change (so one step to undo). */
+export async function removeStrokes(strokes: Stroke[]): Promise<void> {
+  const now = nowIso()
+  await applyChanges({ strokes: strokes.map((s) => ({ ...s, deleted: true, updated_at: now })) })
+}
+
+export interface Moved {
+  ref: { type: BoardRefType; id: string }
+  existing: BoardItem | undefined
+  /** Where and how wide it is drawn now. */
+  at: Placement
+  x: number
+  y: number
+}
+
+/** Everything that was selected, moved together: one change, one step to undo. */
+export async function moveMany(boardId: string, moved: Moved[], strokes: Stroke[], dx: number, dy: number, z: number): Promise<void> {
+  const now = nowIso()
+  await applyChanges({
+    boardItems: moved.map((m, i): BoardItem => ({
+      ...(m.existing ?? { id: newId('bi'), board_id: boardId, ref_type: m.ref.type, ref_id: m.ref.id, w: m.at.w, h: 0, z: 0, x: 0, y: 0, updated_at: '' }),
+      x: m.x,
+      y: m.y,
+      z: z + i,
+      updated_at: now,
+    })),
+    // a millisecond apart, in the order given, so strokes moved together keep which one lies on top
+    strokes: strokes.map((s, i) => ({ ...s, points: moveStroke(s.points, dx, dy), updated_at: new Date(Date.parse(now) + i).toISOString() })),
+  })
+}
+
+export interface Doomed {
+  /** Text, pictures, and pointers to things from elsewhere: the row on this board goes. */
+  items: BoardItem[]
+  /** Hand-written cards of this board: the card itself goes, everywhere. */
+  cards: Card[]
+  strokes: Stroke[]
+  connectors: Connector[]
+}
+
+/** Deletes a selection in one change (one step to undo). */
+export async function deleteMany(doomed: Doomed): Promise<void> {
+  const now = nowIso()
+  const tomb = <T extends { deleted?: boolean; updated_at: string }>(e: T): T => ({ ...e, deleted: true, updated_at: now })
+  const cardIds = new Set(doomed.cards.map((c) => c.id))
+  // a deleted card takes its places (on this board and as a pointer on others) and its lines with it
+  const cardItems = cardIds.size > 0 ? (await db.boardItems.toArray()).filter((i) => !i.deleted && i.ref_type === 'card' && cardIds.has(i.ref_id)) : []
+  const items = [...new Map([...doomed.items, ...cardItems].map((i) => [i.id, i])).values()]
+  const ends = new Set([...items.flatMap((i) => [i.id, `item:${i.id}`, `${i.ref_type}:${i.ref_id}`]), ...[...cardIds].map((id) => `card:${id}`)])
+  const lines = (await db.connectors.toArray()).filter((c) => !c.deleted && (ends.has(c.from) || ends.has(c.to)))
+  const connectors = [...new Map([...doomed.connectors, ...lines].map((c) => [c.id, c])).values()]
+  await applyChanges({
+    cards: doomed.cards.map(tomb),
+    boardItems: items.map(tomb),
+    strokes: doomed.strokes.map(tomb),
+    connectors: connectors.map(tomb),
   })
 }
 

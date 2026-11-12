@@ -3,7 +3,7 @@
 //  - a pile: references to cards, papers and other piles, freely arranged
 
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type MouseEvent, type ReactNode } from 'react'
 import { boardHref } from '../../domain/boards'
 import { candidatesFor, linkCitations } from '../../domain/citations'
 import { shortDate } from '../../domain/importer'
@@ -17,26 +17,77 @@ import {
   addRefToBoard,
   addStroke,
   addTextItem,
+  deleteMany,
   deleteManualCard,
+  moveMany,
   patchConnector,
   patchItem,
   removeItem,
-  removeStroke,
+  removeStrokes,
   saveManualCard,
 } from '../../store/boardActions'
+import { historyState, redoLast, startHistory, subscribeHistory, undoLast } from '../../store/history'
+import { exportBoard } from '../../domain/exportMarkdown'
+import { copyText } from '../../ui/clipboard'
+import { POINTER_DROP, type PointerDrop } from '../../ui/pointerDrag'
 import { boardCounts, deleteBoard, renameBoard, touchBoard } from '../../store/boardStore'
 import { db, localChangeListeners, todayLocal } from '../../store/db'
 import { DRAG_TYPE, readDrag } from '../../ui/drag'
-import { IconBack, IconCheck, IconHand, IconImage, IconLink, IconPen, IconPlus, IconText } from '../../ui/icons'
+import { IconBack, IconCheck, IconEraser, IconImage, IconLink, IconMarker, IconPen, IconPlus, IconRedo, IconSelect, IconText, IconUndo } from '../../ui/icons'
 import { fileToImage } from '../../ui/image'
 import { Markdown } from '../../ui/Markdown'
 import { AddToDiscussion } from '../discussions/AddToDiscussion'
 import { KIND_COLOR } from '../../domain/colors'
-import { Canvas, DEFAULT_INK_SIZE, type CanvasApi, type CanvasNode, type Selection, type Tool } from './Canvas'
+import { Canvas, MARKER_OPACITY, MARKER_SIZE, NOTHING, PEN_SIZE, selectionSize, type CanvasApi, type CanvasNode, type Selection, type Tool } from './Canvas'
 import { CardDialog } from './CardDialog'
 import { CitePopover, Cover, RawDialog, TextBox, ToolButton, useNarrow } from './parts'
 
-const INK = '#b4455c'
+/** The four pens in the tray. Dark enough to read on the board's pale background. */
+const PRESET_COLORS = [
+  { value: '#d0443c', name: '红' },
+  { value: '#e0a100', name: '黄' },
+  { value: '#3b82c4', name: '蓝' },
+  { value: '#3f9657', name: '绿' },
+]
+
+interface InkChoice {
+  color: string
+  /** Colours picked from the wheel lately, newest first. */
+  recent: string[]
+}
+
+function loadInk(): InkChoice {
+  try {
+    const saved = JSON.parse(localStorage.getItem('board.ink') ?? 'null') as Partial<InkChoice> | null
+    if (saved && typeof saved.color === 'string') return { color: saved.color, recent: Array.isArray(saved.recent) ? saved.recent.slice(0, 4) : [] }
+  } catch {
+    // start with the defaults
+  }
+  return { color: PRESET_COLORS[0].value, recent: [] }
+}
+
+function saveInk(next: InkChoice): InkChoice {
+  try {
+    localStorage.setItem('board.ink', JSON.stringify(next))
+  } catch {
+    // remembering the colour is a convenience only
+  }
+  return next
+}
+
+/** Called when a stroke has been drawn: a colour from the wheel joins the recent ones. */
+function rememberColor(ink: InkChoice): InkChoice {
+  if (PRESET_COLORS.some((p) => p.value === ink.color) || ink.recent[0] === ink.color) return ink
+  return saveInk({ ...ink, recent: [ink.color, ...ink.recent.filter((c) => c !== ink.color)].slice(0, 4) })
+}
+
+const TOOL_HINT: Record<Tool, string> = {
+  select: '点一下选中，拖动移动；在空白处圈一圈，选中圈里的；两指移动和缩放',
+  connect: '从一张卡片拖到另一张',
+  pen: '用笔或手指画；两指移动和缩放',
+  marker: '粗的半透明笔，适合划重点',
+  eraser: '划过哪一笔，整笔擦掉',
+}
 
 /** Rough height before a card has been measured, so the first paint is close. */
 function estimate(text: string): number {
@@ -65,7 +116,11 @@ export function BoardView({ boardId, focus }: Props) {
     [boardId],
   )
   const strokes = useLiveQuery(
-    () => db.strokes.where('board_id').equals(boardId).filter((s) => !s.deleted).toArray(),
+    // in the order they were drawn, so a later stroke lies on top of an earlier one
+    async () =>
+      (await db.strokes.where('board_id').equals(boardId).filter((s) => !s.deleted).toArray()).sort((a, b) =>
+        a.updated_at < b.updated_at ? -1 : a.updated_at > b.updated_at ? 1 : a.id < b.id ? -1 : 1,
+      ),
     [boardId],
   )
   const papers = useLiveQuery(() => db.papers.filter((p) => !p.deleted).toArray())
@@ -97,21 +152,23 @@ export function BoardView({ boardId, focus }: Props) {
   const importOrder = useLiveQuery(async () => new Map((await db.imports.toArray()).map((e) => [e.id, e.imported_at])))
 
   const [editing, setEditing] = useState(false)
-  const [tool, setTool] = useState<Tool>('move')
-  const [selection, setSelection] = useState<Selection>(null)
+  const [tool, setTool] = useState<Tool>('select')
+  const [selection, setSelection] = useState<Selection>(NOTHING)
+  const [ink, setInk] = useState(loadInk)
+  const history = useSyncExternalStore(subscribeHistory, historyState)
   const [typingKey, setTypingKey] = useState<string | null>(null)
   const [heights, setHeights] = useState<Record<string, number>>({})
   const [popover, setPopover] = useState<{ paperId: string; x: number; y: number } | null>(null)
   const [rawOf, setRawOf] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null)
   const [dropping, setDropping] = useState(false)
-  /** Cards being chosen for a discussion box. null = not choosing. */
-  const [picked, setPicked] = useState<string[] | null>(null)
   /** The card dialog: writing a new card, or changing a hand-written one. */
-  const [cardDialog, setCardDialog] = useState<{ card?: Card } | null>(null)
+  const [cardDialog, setCardDialog] = useState<{ card?: Card; kind?: Exclude<Card['kind'], '其他'>; date?: string; round?: number } | null>(null)
   const downAt = useRef<{ x: number; y: number } | null>(null)
-  const press = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null)
-  const swallowClick = useRef(false)
+  /** How many cards have been written one after another with Enter (each lands a little lower). */
+  const chain = useRef(0)
+  /** A card that was just written and should be brought into view once it is drawn. */
+  const [reveal, setReveal] = useState<string | null>(null)
   const api = useRef<CanvasApi>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const stage = useRef<HTMLDivElement>(null)
@@ -123,9 +180,7 @@ export function BoardView({ boardId, focus }: Props) {
     noticeTimer.current = setTimeout(() => setNotice(null), 3200)
   }, [])
 
-  const canEdit = !narrow
-  const isEditing = editing && canEdit && picked === null
-  const canPick = canEdit
+  const isEditing = editing
 
   const onMeasure = useCallback((key: string, h: number) => {
     setHeights((prev) => (prev[key] === h ? prev : { ...prev, [key]: h }))
@@ -426,38 +481,114 @@ export function BoardView({ boardId, focus }: Props) {
     return { ref: { type: key.slice(0, cut) as BoardRefType, id: key.slice(cut + 1) }, existing: itemByRef.get(key), at }
   }
 
-  const onMove = (key: string, x: number, y: number) => {
-    const r = resolve(key)
-    if (r) void patchItem(boardId, r.ref, r.existing, r.at, { x, y, z: topZ })
+  const onMoveMany = (moves: { key: string; x: number; y: number }[], strokeIds: string[], dx: number, dy: number) => {
+    const moved = moves.map((m) => ({ m, r: resolve(m.key) })).filter((x) => x.r).map(({ m, r }) => ({ ref: r!.ref, existing: r!.existing, at: r!.at, x: m.x, y: m.y }))
+    const ink = (strokes ?? []).filter((st) => strokeIds.includes(st.id))
+    if (moved.length + ink.length > 0) void moveMany(boardId, moved, ink, dx, dy, topZ)
   }
   const onResize = (key: string, w: number) => {
     const r = resolve(key)
     if (r) void patchItem(boardId, r.ref, r.existing, r.at, { w, z: topZ })
   }
 
-  const selectedItem = selection?.kind === 'node' ? resolve(selection.id) : null
-  const selectedLink = selection?.kind === 'link' ? connectors?.find((c) => c.id === selection.id) : undefined
-  const selectedStroke = selection?.kind === 'stroke' ? strokes?.find((s) => s.id === selection.id) : undefined
-  /** Removes what was put on this board: text, pictures, lines, ink, and pointers to things from elsewhere. Imported cards of this board are not deleted here. */
+  const count = selectionSize(selection)
+  const oneKey = selection.nodes.length === 1 && selection.strokes.length === 0 ? selection.nodes[0] : null
+  const selectedItem = oneKey ? resolve(oneKey) : null
+  const selectedLink = selection.link ? connectors?.find((c) => c.id === selection.link) : undefined
+
+  /**
+   * Deletes everything selected, in one change. What was put on this board goes: text, pictures, ink,
+   * lines, hand-written cards, and pointers to papers or to cards from other boards. Cards and covers
+   * that came from an import stay (that import is undone in the settings).
+   */
   const deleteSelection = useCallback(() => {
-    if (selectedLink) void patchConnector(selectedLink, { deleted: true })
-    else if (selectedStroke) void removeStroke(selectedStroke)
-    else if (selectedItem?.existing && selection && (selection.id.startsWith('item:') || !isHome(selection.id))) void removeItem(selectedItem.existing)
-    else return
-    setSelection(null)
-  }, [selectedLink, selectedStroke, selectedItem, selection, isHome])
+    if (selectedLink) {
+      void patchConnector(selectedLink, { deleted: true })
+      setSelection(NOTHING)
+      return
+    }
+    const doomed = { items: [] as BoardItem[], cards: [] as Card[], strokes: (strokes ?? []).filter((st) => selection.strokes.includes(st.id)), connectors: [] }
+    let kept = 0
+    for (const key of selection.nodes) {
+      if (key.startsWith('item:')) {
+        const row = items?.find((i) => i.id === key.slice(5))
+        if (row) doomed.items.push(row)
+      } else if (!isHome(key)) {
+        const row = itemByRef.get(key)
+        if (row) doomed.items.push(row)
+      } else {
+        const card = key.startsWith('card:') ? cardById.get(key.slice(5)) : undefined
+        if (card && isManualCard(card)) doomed.cards.push(card)
+        else kept++
+      }
+    }
+    const n = doomed.items.length + doomed.cards.length + doomed.strokes.length
+    if (n === 0) {
+      if (kept > 0) say('导入的卡片不在这里删除：到“设置 → 最近导入”里撤销那次导入')
+      return
+    }
+    if (doomed.cards.length > 0 && !window.confirm(`删除选中的 ${n} 样东西？其中 ${doomed.cards.length} 张是你写的卡片，它们在别的画板和讨论框里也会一起消失。`)) return
+    void deleteMany(doomed)
+    setSelection(NOTHING)
+    if (kept > 0) say(`已删除 ${n} 样；另外 ${kept} 张是导入的卡片，留着没动`)
+  }, [selectedLink, selection, strokes, items, itemByRef, cardById, isHome, say])
+
+  // everything the export needs, read ahead of time: copying has to happen in the same tap on iPad and iPhone
+  const notebook = useLiveQuery(async () => {
+    if (!isEditing) return null
+    const [papers, blocks, types, records, cards, boardItems, connectors, strokes, piles, boards, imports] = await Promise.all([
+      db.papers.toArray(), db.blocks.toArray(), db.types.toArray(), db.records.toArray(), db.cards.toArray(), db.boardItems.toArray(),
+      db.connectors.toArray(), db.strokes.toArray(), db.piles.toArray(), db.boards.toArray(), db.imports.toArray(),
+    ])
+    return { papers, blocks, types, records, cards, boardItems, connectors, strokes, piles, boards, imports }
+  }, [isEditing])
+
+  const exportSelection = async () => {
+    if (!notebook) return
+    const only = new Set([...selection.nodes, ...selection.strokes.map((id) => `stroke:${id}`)])
+    const ok = await copyText(exportBoard(boardId, notebook, only))
+    say(ok ? `已复制选中的 ${count} 样（Markdown）` : '没能复制，请再试一次', !ok)
+  }
+
+  /** Cards and papers among what is selected: what a discussion box can hold. */
+  const discussable = selection.nodes
+    .map((key) => (key.startsWith('card:') ? { type: 'card' as const, id: key.slice(5) } : key.startsWith('paper:') ? { type: 'paper' as const, id: key.slice(6) } : null))
+    .filter((r): r is { type: 'card' | 'paper'; id: string } => r !== null)
+
+  const undo = useCallback(() => {
+    setSelection(NOTHING)
+    void undoLast().then((did) => did || say('没有可以撤回的了'))
+  }, [say])
+  const redo = useCallback(() => {
+    setSelection(NOTHING)
+    void redoLast()
+  }, [])
+
+  // what was done on this board can be undone while it stays open
+  useEffect(() => startHistory(), [boardId])
 
   useEffect(() => {
     if (!isEditing) return
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName
       if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT') return
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault()
+        if (e.shiftKey) redo()
+        else undo()
+        return
+      }
+      if (e.ctrlKey && e.key.toLowerCase() === 'y') {
+        e.preventDefault()
+        redo()
+        return
+      }
       if (e.key === 'Delete' || e.key === 'Backspace') deleteSelection()
-      if (e.key === 'Escape') setSelection(null)
+      if (e.key === 'Escape') setSelection(NOTHING)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [isEditing, deleteSelection])
+  }, [isEditing, deleteSelection, undo, redo])
 
   const quiet = (label: string, onClick: () => void, danger = false) => (
     <button key={label} type="button" className={`btn btn-small btn-quiet${danger ? ' edit-delete' : ''}`} onClick={onClick}>
@@ -465,127 +596,89 @@ export function BoardView({ boardId, focus }: Props) {
     </button>
   )
 
+  // The bar that floats by the selection. The same on every device: what applies to one thing first,
+  // then what applies to any selection (discussion box, export, delete).
   let actions: ReactNode = null
-  if (isEditing && tool === 'move' && !typingKey) {
+  if (isEditing && tool === 'select' && !typingKey && count > 0) {
     const buttons: ReactNode[] = []
-    if (selection?.kind === 'node' && selectedItem) {
-      const key = selection.id
-      const isOwn = key.startsWith('item:')
-      const home = isHome(key)
-      if ((home && key.startsWith('card:')) || selectedItem.ref.type === 'text') {
-        buttons.push(quiet('改文字', () => setTypingKey(key)))
-      }
-      if (home && selectedItem.existing) {
-        buttons.push(
-          quiet('恢复原样', () => {
-            void removeItem(selectedItem.existing!)
-            setSelection(null)
-          }),
-        )
-      }
-      const manual = home && key.startsWith('card:') ? cardById.get(key.slice(5)) : undefined
-      if (manual && isManualCard(manual)) {
-        buttons.push(quiet('日期和类型', () => setCardDialog({ card: manual })))
-        buttons.push(
-          quiet(
-            '删除',
-            () => {
-              if (window.confirm('删除这张卡片？它在堆和讨论框里也会一起消失。')) {
-                void deleteManualCard(manual)
-                setSelection(null)
-              }
-            },
-            true,
-          ),
-        )
-      }
-      if (!home && !isOwn) buttons.push(quiet('移出这块画板', deleteSelection))
-      if (isOwn) buttons.push(quiet('删除', deleteSelection, true))
-    } else if (selectedLink) {
+    if (selectedLink) {
       buttons.push(quiet(selectedLink.arrow ? '去掉箭头' : '加上箭头', () => void patchConnector(selectedLink, { arrow: !selectedLink.arrow })))
       buttons.push(quiet('删除', deleteSelection, true))
-    } else if (selectedStroke) {
-      buttons.push(quiet('删除', deleteSelection, true))
+    } else {
+      if (oneKey && selectedItem) {
+        const home = isHome(oneKey)
+        if ((home && oneKey.startsWith('card:')) || selectedItem.ref.type === 'text') buttons.push(quiet('改文字', () => setTypingKey(oneKey)))
+        if (home && selectedItem.existing) {
+          buttons.push(
+            quiet('恢复原样', () => {
+              void removeItem(selectedItem.existing!)
+              setSelection(NOTHING)
+            }),
+          )
+        }
+        const manual = home && oneKey.startsWith('card:') ? cardById.get(oneKey.slice(5)) : undefined
+        if (manual && isManualCard(manual)) buttons.push(quiet('日期和类型', () => setCardDialog({ card: manual })))
+      } else {
+        buttons.push(
+          <span key="n" className="sel-count" role="status">
+            已选 {count} 样
+          </span>,
+        )
+      }
+      if (discussable.length > 0) {
+        buttons.push(<AddToDiscussion key="disc" className="btn btn-small btn-quiet" label="放进讨论框" refs={discussable} />)
+      }
+      buttons.push(quiet('导出', () => void exportSelection()))
+      buttons.push(quiet(oneKey && !oneKey.startsWith('item:') && !isHome(oneKey) ? '移出这块画板' : '删除', deleteSelection, true))
     }
-    if (buttons.length > 0) actions = buttons
+    actions = buttons
   }
 
-  // ── choosing cards for a discussion box: long press (touch), right click (mouse), or the "选卡片" button
+  /** Right click, or a finger held still: start arranging with that thing selected. */
+  const onGrab = (target: { node?: string; stroke?: string }) => {
+    setEditing(true)
+    setTool('select')
+    setTypingKey(null)
+    setSelection((prev) => {
+      const already = target.node ? prev.nodes.includes(target.node) : prev.strokes.includes(target.stroke!)
+      return already ? prev : { nodes: target.node ? [target.node] : [], strokes: target.stroke ? [target.stroke] : [], link: null }
+    })
+  }
+
   const cardKeyAt = (target: EventTarget | null) => {
     const key = (target as HTMLElement | null)?.closest<HTMLElement>('[data-node]')?.dataset.node ?? ''
     return key.startsWith('card:') ? key : ''
   }
-  const togglePick = (key: string) =>
-    setPicked((prev) => (prev === null ? [key] : prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]))
-  const cancelPress = () => {
-    if (press.current) clearTimeout(press.current.timer)
-    press.current = null
-  }
-  const pickHandlers = canPick
-    ? {
-        onContextMenu: (e: MouseEvent) => {
-          const key = cardKeyAt(e.target)
-          if (!key || isEditing) return
-          e.preventDefault()
-          setPicked((prev) => (prev === null ? [key] : prev.includes(key) ? prev : [...prev, key]))
-        },
-        onPointerDownCapture: (e: ReactPointerEvent) => {
-          cancelPress()
-          const key = cardKeyAt(e.target)
-          if (!key || e.pointerType === 'mouse' || isEditing || picked !== null) return
-          press.current = {
-            x: e.clientX,
-            y: e.clientY,
-            timer: setTimeout(() => {
-              press.current = null
-              swallowClick.current = true
-              setPicked([key])
-            }, 550),
-          }
-        },
-        onPointerMoveCapture: (e: ReactPointerEvent) => {
-          const p = press.current
-          if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8) cancelPress()
-        },
-        onPointerUpCapture: cancelPress,
-        onPointerCancelCapture: cancelPress,
-        onClickCapture: (e: MouseEvent) => {
-          if (swallowClick.current) {
-            // the tap that ends a long press must not immediately un-choose the card
-            swallowClick.current = false
-            e.preventDefault()
-            e.stopPropagation()
-            return
-          }
-          if (picked === null) return
-          // The board captures the pointer for panning, so the click's own target is the board:
-          // look at what is under the finger instead.
-          if ((e.target as HTMLElement).closest('.pick-bar, .board-head, dialog')) return
-          const key = cardKeyAt(document.elementFromPoint(e.clientX, e.clientY))
-          if (!key) return
-          e.preventDefault()
-          e.stopPropagation()
-          togglePick(key)
-        },
-      }
-    : {}
 
-  const saveCard = async (kind: Exclude<Card['kind'], '其他'>, text: string, date: string) => {
+  /** `another`: Enter was pressed, so the dialog stays for the next card of the same kind. */
+  const saveCard = async (kind: Exclude<Card['kind'], '其他'>, text: string, date: string, another: boolean) => {
     const editingCard = cardDialog?.card
-    setCardDialog(null)
     if (editingCard) {
+      setCardDialog(null)
       await saveManualCard(editingCard, { kind, text, date })
       return
     }
-    // On a wide screen the new card lands in the middle of what is in view, on top.
-    // On a phone it takes the next template spot, so an untouched day stays one column.
+    // On a wide screen the new card lands in the middle of what is in view, on top; cards written
+    // one after another step down so they do not cover each other.
+    // On a phone it takes the next template spot, so an untouched board stays one column.
     const c = !narrow ? api.current?.center() : undefined
-    await addManualCard(boardId, date, kind, text, c ? { x: c.x - CARD_W / 2, y: c.y - 60, w: CARD_W, z: topZ } : undefined)
+    const step = chain.current * 44
+    // The next blank card is up before this one is saved, so nothing typed straight after Enter is lost.
+    if (another) {
+      chain.current += 1
+      setCardDialog({ kind, date, round: chain.current })
+    } else {
+      chain.current = 0
+      setCardDialog(null)
+    }
+    const id = await addManualCard(boardId, date, kind, text, c ? { x: c.x - CARD_W / 2 + step, y: c.y - 60 + step, w: CARD_W, z: topZ + step } : undefined)
+    // on a phone the card went to its template spot, which may be out of view: bring it in
+    if (!c) setReveal(id)
   }
 
   const onClick = (e: MouseEvent) => {
     const cite = (e.target as HTMLElement).closest<HTMLAnchorElement>('a.cite')
-    if (!cite && narrow && picked === null) {
+    if (!cite && narrow && !isEditing) {
       // Phone: the board is not arranged here, but a hand-written card can still be opened to change it.
       const d = downAt.current
       const still = !d || Math.hypot(e.clientX - d.x, e.clientY - d.y) < 8
@@ -600,11 +693,20 @@ export function BoardView({ boardId, focus }: Props) {
     setPopover({ paperId: cite.dataset.paper ?? '', x: e.clientX, y: e.clientY })
   }
 
+  const pick = (next: Tool) => {
+    setTool(next)
+    setSelection(NOTHING)
+  }
+  const openNewCard = () => {
+    chain.current = 0
+    setCardDialog({})
+  }
+
   const addText = async () => {
     const c = api.current?.center() ?? { x: 0, y: 0 }
     const id = await addTextItem(boardId, { x: c.x - 130, y: c.y - 20 }, topZ)
-    setTool('move')
-    setSelection({ kind: 'node', id: `item:${id}` })
+    setTool('select')
+    setSelection({ nodes: [`item:${id}`], strokes: [], link: null })
     setTypingKey(`item:${id}`)
   }
 
@@ -613,7 +715,7 @@ export function BoardView({ boardId, focus }: Props) {
     try {
       const c = api.current?.center() ?? { x: 0, y: 0 }
       await addImageItem(boardId, { x: c.x, y: c.y - 80 }, await fileToImage(file), topZ)
-      setTool('move')
+      setTool('select')
     } catch (err) {
       say(err instanceof Error ? err.message : '图片没有加上，请再试一次', true)
     } finally {
@@ -638,10 +740,20 @@ export function BoardView({ boardId, focus }: Props) {
     say(result === 'added' ? '已放到画板上' : '这块画板上已经有它了')
   }
 
-  const shownNodes = useMemo(
-    () => (picked && picked.length > 0 ? nodes.map((n) => (picked.includes(n.key) ? { ...n, className: `${n.className ?? ''} is-picked` } : n)) : nodes),
-    [nodes, picked],
-  )
+  // A paper dragged out of the library list with a finger, a pencil or the mouse (see ui/pointerDrag).
+  useEffect(() => {
+    const onDropped = (e: Event) => {
+      const { ref, clientX, clientY } = (e as CustomEvent<PointerDrop>).detail
+      const box = stage.current?.querySelector('.canvas')?.getBoundingClientRect()
+      if (!box || clientX < box.left || clientX > box.right || clientY < box.top || clientY > box.bottom) return
+      const at = api.current?.toBoard(clientX, clientY) ?? { x: 0, y: 0 }
+      void addRefToBoard(boardId, ref, { x: at.x - CARD_W / 2, y: at.y - 30 }, topZ).then((result) =>
+        say(result === 'added' ? '已放到画板上' : '这块画板上已经有它了'),
+      )
+    }
+    document.addEventListener(POINTER_DROP, onDropped)
+    return () => document.removeEventListener(POINTER_DROP, onDropped)
+  }, [boardId, topZ, say])
 
   const popPaper = popover ? papers?.find((p) => p.id === popover.paperId) : undefined
   const loaded = source !== undefined && items !== undefined && board !== undefined
@@ -669,6 +781,14 @@ export function BoardView({ boardId, focus }: Props) {
     const t = setTimeout(() => api.current?.focusOn(node.x, node.y, node.w, h), 60)
     return () => clearTimeout(t)
   }, [focus, loaded, nodes, heights])
+
+  useEffect(() => {
+    if (!reveal) return
+    const node = nodes.find((n) => n.key === `card:${reveal}`)
+    if (!node) return
+    setReveal(null)
+    api.current?.focusOn(node.x, node.y, node.w, heights[node.key] ?? 120)
+  }, [reveal, nodes, heights])
 
   const back = board?.pile_id && piles?.some((p) => p.id === board.pile_id) ? `#/pile/${board.pile_id}` : '#/boards'
 
@@ -699,12 +819,11 @@ export function BoardView({ boardId, focus }: Props) {
 
   return (
     <div
-      className={`dayboard${dropping ? ' is-dropping' : ''}${picked !== null ? ' is-picking' : ''}`}
+      className={`dayboard${dropping ? ' is-dropping' : ''}`}
       onClick={onClick}
       onPointerDown={(e) => {
         downAt.current = { x: e.clientX, y: e.clientY }
       }}
-      {...pickHandlers}
       ref={stage}
       onDragOver={onDragOver}
       onDragLeave={() => setDropping(false)}
@@ -720,111 +839,114 @@ export function BoardView({ boardId, focus }: Props) {
 
       <Canvas
         // Wait until everything has loaded: the view is fitted once, to the first content it sees.
-        nodes={loaded ? shownNodes : []}
+        nodes={loaded ? nodes : []}
         links={connectors ?? []}
         strokes={strokes ?? []}
         editing={isEditing}
         tool={tool}
-        selection={isEditing ? selection : null}
+        selection={isEditing ? selection : NOTHING}
         onSelect={(s) => {
-          if (typingKey && (s?.kind !== 'node' || s.id !== typingKey)) return
+          if (typingKey && !(s.nodes.length === 1 && s.nodes[0] === typingKey)) return
           setSelection(s)
         }}
-        onMove={onMove}
+        onMoveMany={onMoveMany}
         onResize={onResize}
         onLink={(from, to) => void addConnector(boardId, from, to)}
-        onStroke={(points) => void addStroke(boardId, points, INK, DEFAULT_INK_SIZE)}
+        onStroke={(points) => {
+          void addStroke(boardId, points, ink.color, tool === 'marker' ? MARKER_SIZE : PEN_SIZE, tool === 'marker' ? 'marker' : 'pen')
+          setInk((prev) => rememberColor(prev))
+        }}
+        onErase={(ids) => void removeStrokes((strokes ?? []).filter((st) => ids.includes(st.id)))}
+        onGrab={onGrab}
+        onTwoFingerTap={isEditing ? undo : undefined}
         onMeasure={onMeasure}
         actions={actions}
         fitKey={`${boardId}:${columns}`}
         topInset={72}
-        inkColor={INK}
+        ink={{ color: ink.color, size: tool === 'marker' ? MARKER_SIZE : PEN_SIZE, opacity: tool === 'marker' ? MARKER_OPACITY : 1 }}
         apiRef={api}
         onZoomOut={() => {
           window.location.hash = back
         }}
       />
 
-      {canEdit &&
-        (isEditing ? (
-          <div className="toolbar" role="toolbar" aria-label="编排工具">
-            <ToolButton label="移动" active={tool === 'move'} onClick={() => setTool('move')} icon={<IconHand />} />
-            <ToolButton
-              label="连线"
-              active={tool === 'connect'}
-              onClick={() => {
-                setTool('connect')
-                setSelection(null)
-              }}
-              icon={<IconLink />}
+      {isEditing && (tool === 'pen' || tool === 'marker') && (
+        <div className="ink-colors" role="group" aria-label="颜色" data-nocanvas>
+          {[...PRESET_COLORS, ...ink.recent.filter((c) => !PRESET_COLORS.some((p) => p.value === c)).map((c) => ({ value: c, name: `最近用过的颜色 ${c}` }))].map((c) => (
+            <button
+              key={c.value}
+              type="button"
+              className="ink-color"
+              aria-label={c.name}
+              aria-pressed={ink.color === c.value}
+              style={{ ['--ink' as string]: c.value }}
+              onClick={() => setInk((prev) => saveInk({ ...prev, color: c.value }))}
             />
-            <ToolButton
-              label="画笔"
-              active={tool === 'draw'}
-              onClick={() => {
-                setTool('draw')
-                setSelection(null)
-              }}
-              icon={<IconPen />}
-            />
-            <span className="toolbar-gap" aria-hidden="true" />
-            <ToolButton label="卡片" onClick={() => setCardDialog({})} icon={<IconPlus />} />
-            <ToolButton label="文字" onClick={() => void addText()} icon={<IconText />} />
-            <ToolButton label="贴图" onClick={() => fileRef.current?.click()} icon={<IconImage />} />
-            <span className="toolbar-gap" aria-hidden="true" />
-            <ToolButton
-              label="完成"
-              onClick={() => {
-                setEditing(false)
-                setSelection(null)
-                setTypingKey(null)
-                setTool('move')
-              }}
-              icon={<IconCheck />}
-            />
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              className="sr-only"
-              tabIndex={-1}
-              aria-hidden="true"
-              onChange={(e) => void addImage(e.target.files?.[0])}
-            />
-          </div>
-        ) : (
-          loaded &&
-          picked === null && (
-            <div className="edit-toggle view-tools">
-              <button type="button" className="btn" onClick={() => setCardDialog({})}>
-                <IconPlus />
-                加卡片
-              </button>
-              {canPick && (cards?.length ?? 0) > 0 && (
-                <button type="button" className="btn" onClick={() => setPicked([])}>
-                  选卡片
-                </button>
-              )}
-              <button type="button" className="btn" onClick={() => setEditing(true)}>
-                <IconPen />
-                编排
-              </button>
-            </div>
-          )
-        ))}
+          ))}
+          <label className="ink-color ink-custom" style={{ ['--ink' as string]: ink.color }}>
+            <span className="sr-only">自己选一个颜色</span>
+            <input type="color" value={ink.color} onChange={(e) => setInk((prev) => saveInk({ ...prev, color: e.target.value }))} />
+          </label>
+        </div>
+      )}
 
-      {!canEdit && loaded && (
-        <button type="button" className="btn edit-toggle" onClick={() => setCardDialog({})}>
-          <IconPlus />
-          加卡片
-        </button>
+      {isEditing ? (
+        <div className="toolbar" role="toolbar" aria-label="编排工具">
+          <ToolButton label="选择" active={tool === 'select'} onClick={() => setTool('select')} icon={<IconSelect />} />
+          <ToolButton label="连线" active={tool === 'connect'} onClick={() => pick('connect')} icon={<IconLink />} />
+          <ToolButton label="画笔" active={tool === 'pen'} onClick={() => pick('pen')} icon={<IconPen />} />
+          <ToolButton label="马克笔" active={tool === 'marker'} onClick={() => pick('marker')} icon={<IconMarker />} />
+          <ToolButton label="橡皮" active={tool === 'eraser'} onClick={() => pick('eraser')} icon={<IconEraser />} />
+          <span className="toolbar-gap" aria-hidden="true" />
+          <ToolButton label="撤回" disabled={!history.canUndo} onClick={undo} icon={<IconUndo />} />
+          <ToolButton label="重做" disabled={!history.canRedo} onClick={redo} icon={<IconRedo />} />
+          <span className="toolbar-gap" aria-hidden="true" />
+          <ToolButton label="卡片" onClick={() => openNewCard()} icon={<IconPlus />} />
+          <ToolButton label="文字" onClick={() => void addText()} icon={<IconText />} />
+          <ToolButton label="贴图" onClick={() => fileRef.current?.click()} icon={<IconImage />} />
+          <span className="toolbar-gap" aria-hidden="true" />
+          <ToolButton
+            label="完成"
+            onClick={() => {
+              setEditing(false)
+              setSelection(NOTHING)
+              setTypingKey(null)
+              setTool('select')
+            }}
+            icon={<IconCheck />}
+          />
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            tabIndex={-1}
+            aria-hidden="true"
+            onChange={(e) => void addImage(e.target.files?.[0])}
+          />
+        </div>
+      ) : (
+        loaded && (
+          <div className="edit-toggle view-tools">
+            <button type="button" className="btn" onClick={() => openNewCard()}>
+              <IconPlus />
+              加卡片
+            </button>
+            <button type="button" className="btn" onClick={() => setEditing(true)}>
+              <IconPen />
+              {narrow ? '编辑' : '编排'}
+            </button>
+          </div>
+        )
       )}
 
       {cardDialog && (
         <CardDialog
+          key={cardDialog.round ?? 'one'}
           card={cardDialog.card}
-          defaultDate={todayLocal()}
-          onSave={(kind, text, date) => void saveCard(kind, text, date)}
+          defaultKind={cardDialog.kind}
+          defaultDate={cardDialog.date ?? todayLocal()}
+          onSave={(kind, text, date, another) => void saveCard(kind, text, date, another)}
           onDelete={
             cardDialog.card
               ? () => {
@@ -833,24 +955,11 @@ export function BoardView({ boardId, focus }: Props) {
                 }
               : undefined
           }
-          onClose={() => setCardDialog(null)}
+          onClose={() => {
+            chain.current = 0
+            setCardDialog(null)
+          }}
         />
-      )}
-
-      {picked !== null && (
-        <div className="pick-bar" role="group" aria-label="选卡片放进讨论框">
-          <span role="status">{picked.length === 0 ? '点卡片来选' : `已选 ${picked.length} 张`}</span>
-          {picked.length > 0 && (
-            <AddToDiscussion
-              className="btn btn-primary btn-small"
-              refs={() => picked.map((k) => ({ type: 'card' as const, id: k.slice(5) }))}
-              onDone={() => setPicked(null)}
-            />
-          )}
-          <button type="button" className="btn btn-quiet btn-small" onClick={() => setPicked(null)}>
-            取消
-          </button>
-        </div>
       )}
 
       {notice ? (
@@ -859,9 +968,9 @@ export function BoardView({ boardId, focus }: Props) {
         </p>
       ) : (
         isEditing &&
-        tool !== 'move' && (
+        (tool !== 'select' || count === 0) && (
           <p className="tool-hint" role="status">
-            {tool === 'connect' ? '从一张卡片拖到另一张' : '用笔或手指画；两指移动和缩放'}
+            {TOOL_HINT[tool]}
           </p>
         )
       )}

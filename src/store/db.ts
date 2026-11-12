@@ -73,19 +73,36 @@ db.on('populate', (tx) => {
   tx.table('types').bulkAdd(builtinTypes())
 })
 
+type Recorder = (before: Map<string, { id: string; updated_at: string }>, changes: Changes) => void
+let recorder: Recorder | null = null
+
+/** For undo: told, after each write, what the changed entries looked like before. */
+export function setRecorder(next: Recorder | null): void {
+  recorder = next
+}
+
 /** Writes a set of changes in one transaction: all of it lands, or none. */
 export async function applyChanges(changes: Changes): Promise<void> {
   const names = (Object.keys(changes) as TableName[]).filter((n) => (changes[n]?.length ?? 0) > 0)
   if (names.length === 0) return
+  const before = new Map<string, { id: string; updated_at: string }>()
+  const noting = recorder
   await db.transaction('rw', [...names.map((n) => db[n]), db.dirty], async () => {
     for (const name of names) {
       const rows = changes[name] as { id: string; updated_at: string }[]
+      if (noting) {
+        const earlier = await db.table(name).bulkGet(rows.map((r) => r.id))
+        earlier.forEach((row, i) => {
+          if (row) before.set(`${name}:${rows[i].id}`, row)
+        })
+      }
       await db.table(name).bulkPut(rows)
       await db.dirty.bulkPut(
         rows.map((r) => ({ key: `${name}:${r.id}`, table: name, id: r.id, updated_at: r.updated_at })),
       )
     }
   })
+  noting?.(before, changes)
   for (const listener of localChangeListeners) listener()
 }
 

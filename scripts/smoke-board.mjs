@@ -232,7 +232,7 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
     await page.locator('.node.card').first().waitFor()
     await page.waitForTimeout(300)
     check(`${tag} 标题旁写着卡片数`, await page.getByText('7 张卡片').isVisible())
-    check(`${tag} 左侧是论文库边栏`, await page.locator('.board-side .liblist').isVisible())
+    check(`${tag} 论文库默认收起成一个图标`, (await page.locator('.board-side').count()) === 0 && (await page.getByRole('button', { name: '打开论文库' }).isVisible()))
     await page.getByRole('button', { name: '编排' }).click()
 
     const card = page.locator('.node.card', { hasText: '研究卡片要分成哪几种' })
@@ -281,7 +281,7 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
     for (let i = 1; i <= 12; i++) await page.mouse.move(empty.x + i * 8, empty.y + Math.sin(i / 2) * 30)
     await page.mouse.up()
     await page.waitForTimeout(300)
-    check(`${tag} 手绘涂鸦`, (await page.locator('.ink path[data-id]').count()) === 1)
+    check(`${tag} 手绘涂鸦`, (await page.locator('.ink path[data-stroke]').count()) === 1)
 
     // text
     await page.getByRole('button', { name: '文字' }).click()
@@ -313,7 +313,7 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
     await page.waitForTimeout(400)
     const kept =
       (await page.locator('.links .link-line').count()) === 1 &&
-      (await page.locator('.ink path[data-id]').count()) === 1 &&
+      (await page.locator('.ink path[data-stroke]').count()) === 1 &&
       (await page.locator('.node.note').count()) === 1 &&
       (await page.locator('.node.photo').count()) === 1 &&
       (await page.locator('.node.card', { hasText: '研究卡片分五种就够了。' }).count()) === 1

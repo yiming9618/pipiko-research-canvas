@@ -6,10 +6,10 @@ import { markRead, retryLookup } from '../../store/paperActions'
 import { shortDate } from '../../domain/importer'
 import { AddPaperForm, EditPaperForm } from './PaperForm'
 import { AddToDiscussion } from '../discussions/AddToDiscussion'
-import { DRAG_TYPE } from '../../ui/drag'
+import { watchPointerDrag } from '../../ui/pointerDrag'
 import { boardHref } from '../../domain/boards'
 import { recordBoardId } from '../../domain/migrate'
-import { IconChevron, IconEdit, IconPlus } from '../../ui/icons'
+import { IconChevron, IconEdit, IconGrip, IconPlus } from '../../ui/icons'
 
 const UNCATEGORISED = '未分类'
 
@@ -30,7 +30,13 @@ function store(key: string, value: unknown): void {
   }
 }
 
-export function LibraryList({ activeId }: { activeId?: string }) {
+interface ListProps {
+  activeId?: string
+  /** Beside a board: papers can be dragged out of the list onto it. Called when a drag starts. */
+  onDragOut?: () => void
+}
+
+export function LibraryList({ activeId, onDragOut }: ListProps) {
   const papers = useLiveQuery(() => db.papers.filter((p) => !p.deleted).toArray())
   const blocks = useLiveQuery(() => db.blocks.filter((b) => !b.deleted && b.type_id !== null).toArray())
   const types = useLiveQuery(() => db.types.filter((t) => !t.deleted).toArray())
@@ -191,12 +197,25 @@ export function LibraryList({ activeId }: { activeId?: string }) {
                             className="paper-row"
                             href={`#/paper/${p.id}`}
                             aria-current={p.id === activeId ? 'page' : undefined}
-                            draggable
-                            onDragStart={(e) => {
-                              e.dataTransfer.setData(DRAG_TYPE, JSON.stringify({ type: 'paper', id: p.id }))
-                              e.dataTransfer.effectAllowed = 'copy'
-                            }}
+                            // dragged with Pointer Events, so it works with a finger as well as the mouse
+                            draggable={false}
+                            data-drag={onDragOut ? '' : undefined}
+                            onPointerDown={
+                              onDragOut
+                                ? (e) => {
+                                    if (e.pointerType === 'mouse' && e.button !== 0) return
+                                    // from the grip a finger can pull in any direction; elsewhere on the row, sideways only
+                                    const grip = !!(e.target as HTMLElement).closest('[data-grip]')
+                                    watchPointerDrag(e, { type: 'paper', id: p.id }, p.title || '（没有标题）', onDragOut, grip)
+                                  }
+                                : undefined
+                            }
                           >
+                            {onDragOut && (
+                              <span className="row-grip" data-grip aria-hidden="true">
+                                <IconGrip />
+                              </span>
+                            )}
                             <span className="paper-row-title">{p.title || '（没有标题）'}</span>
                             {meta.length > 0 && <span className="paper-row-meta">{meta.join(' · ')}</span>}
                             {dots.length > 0 && (

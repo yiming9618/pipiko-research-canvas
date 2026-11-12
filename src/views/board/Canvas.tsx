@@ -3,6 +3,7 @@
 // links); connectors and ink are SVG layers below and above them.
 
 import { getStroke } from 'perfect-freehand'
+import { rectInLasso, strokeBounds, strokeInLasso, strokeTouched, type Pt } from '../../domain/geometry'
 import { lockZoomWheel, zoomWheelLocked } from '../time/zoom'
 import {
   useCallback,
@@ -41,10 +42,28 @@ export interface CanvasStroke {
   points: number[]
   color: string
   size: number
+  pen?: 'pen' | 'marker'
 }
 
-export type Tool = 'move' | 'connect' | 'draw'
-export type Selection = { kind: 'node' | 'link' | 'stroke'; id: string } | null
+/** select: tap, shift-tap or lasso, then drag / act on the selection. pen and marker draw; eraser removes whole strokes. */
+export type Tool = 'select' | 'connect' | 'pen' | 'marker' | 'eraser'
+
+/** What is selected: any number of things on the board and of ink strokes, or one connector. */
+export interface Selection {
+  nodes: string[]
+  strokes: string[]
+  link: string | null
+}
+export const NOTHING: Selection = { nodes: [], strokes: [], link: null }
+export const selectionSize = (s: Selection) => s.nodes.length + s.strokes.length + (s.link ? 1 : 0)
+
+export interface Ink {
+  color: string
+  size: number
+  /** 1 for the pen; the marker is see-through. */
+  opacity: number
+}
+export const MARKER_OPACITY = 0.38
 
 interface View {
   x: number
@@ -60,10 +79,17 @@ interface Props {
   tool: Tool
   selection: Selection
   onSelect: (s: Selection) => void
-  onMove: (key: string, x: number, y: number) => void
+  /** The selection was dragged: where each selected thing ends up, and how far the selected ink moved. */
+  onMoveMany: (moves: { key: string; x: number; y: number }[], strokes: string[], dx: number, dy: number) => void
   onResize: (key: string, w: number) => void
   onLink: (from: string, to: string) => void
   onStroke: (points: number[]) => void
+  /** The eraser went over these strokes (all of one pass, so it is one step to undo). */
+  onErase: (ids: string[]) => void
+  /** Right click, or a long press with a finger, on a thing or a stroke: select it and show what can be done. */
+  onGrab?: (target: { node?: string; stroke?: string }) => void
+  /** Two fingers tapped together (undo, on a touch screen). */
+  onTwoFingerTap?: () => void
   onMeasure: (key: string, h: number) => void
   /** Buttons for the current selection, shown just above it. */
   actions?: ReactNode
@@ -71,9 +97,7 @@ interface Props {
   fitKey: string
   /** Space kept clear at the top for the header. */
   topInset?: number
-  inkColor: string
-  /** A dragged node was let go over an element marked `data-pile-drop`: it stays where it was. */
-  onDropOn?: (key: string, target: HTMLElement) => void
+  ink: Ink
   /** Called when the user keeps pinching in after the board is already at its smallest. */
   onZoomOut?: () => void
   /** Lets the parent turn a screen point into a board position (for placing new items). */
@@ -96,16 +120,25 @@ const INK_SIZE = 5
 
 type Gesture =
   | { type: 'pan'; sx: number; sy: number; view: View }
-  | { type: 'pinch'; dist: number; mx: number; my: number; view: View; wantOut: boolean }
-  | { type: 'drag'; key: string; sx: number; sy: number; x: number; y: number; moved: boolean }
+  | { type: 'pinch'; dist: number; mx: number; my: number; view: View; wantOut: boolean; at: number; moved: boolean }
+  | { type: 'drag'; sx: number; sy: number; moved: boolean; nodes: { key: string; x: number; y: number }[]; strokes: string[] }
   | { type: 'resize'; key: string; sx: number; w: number }
   | { type: 'link'; from: string }
   | { type: 'draw'; points: number[]; pen: boolean }
+  | { type: 'lasso'; points: Pt[]; add: boolean; sx: number; sy: number }
+  | { type: 'erase'; ids: Set<string> }
 
 type Live =
   | { type: 'link'; from: string; x: number; y: number }
   | { type: 'draw'; points: number[] }
+  | { type: 'lasso'; points: Pt[] }
   | null
+
+// Shorter than the system's own long press (about half a second), which would otherwise
+// start selecting text and take the touch away before this fires.
+const LONG_PRESS = 400
+const TAP_MS = 300
+const ERASER_REACH = 12
 
 interface Rect {
   x: number
@@ -114,10 +147,11 @@ interface Rect {
   h: number
 }
 
-function strokePath(points: number[], size: number): string {
+function strokePath(points: number[], size: number, marker = false): string {
   const input: [number, number, number][] = []
   for (let i = 0; i < points.length; i += 3) input.push([points[i], points[i + 1], points[i + 2]])
-  const outline = getStroke(input, { size, thinning: 0.5, smoothing: 0.5, streamline: 0.4 })
+  // the marker keeps one width; the pen thins with speed and pressure
+  const outline = getStroke(input, { size, thinning: marker ? 0 : 0.5, smoothing: 0.5, streamline: 0.4 })
   if (outline.length === 0) return ''
   let d = `M${outline[0][0].toFixed(1)},${outline[0][1].toFixed(1)}`
   for (let i = 1; i < outline.length; i++) {
@@ -161,13 +195,15 @@ export function Canvas(props: Props) {
   const pointers = useRef(new Map<number, { x: number; y: number }>())
   const gesture = useRef<Gesture | null>(null)
   const fitK = useRef(1)
-  const dropTarget = useRef<HTMLElement | null>(null)
-  const setDropTarget = (el: HTMLElement | null) => {
-    if (el === dropTarget.current) return
-    dropTarget.current?.classList.remove('is-over')
-    el?.classList.add('is-over')
-    dropTarget.current = el
+  const press = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cancelPress = () => {
+    if (press.current) clearTimeout(press.current)
+    press.current = null
   }
+  /** How far the selected ink has been dragged so far (it is redrawn in place only when let go). */
+  const [inkShift, setInkShift] = useState<{ dx: number; dy: number } | null>(null)
+  /** Strokes the eraser has passed over in this stroke of the eraser: hidden at once, removed when it lifts. */
+  const [erasing, setErasing] = useState<string[]>([])
   const zoomOut = useRef(props.onZoomOut)
   zoomOut.current = props.onZoomOut
   /** Smallest zoom. With a level above this board, half the fitted size is the floor; past it we leave. */
@@ -176,7 +212,7 @@ export function Canvas(props: Props) {
   const [live, setLive] = useState<Live>(null)
   /** Shown from the moment a drag ends until the saved value comes back, so nothing snaps back. */
   const [overrides, setOverrides] = useState<Record<string, { x?: number; y?: number; w?: number }>>({})
-  const [pendingInk, setPendingInk] = useState<number[][]>([])
+  const [pendingInk, setPendingInk] = useState<{ points: number[]; ink: Ink; marker: boolean }[]>([])
   const [heights, setHeights] = useState<Record<string, number>>({})
 
   const placed = useMemo(
@@ -205,7 +241,11 @@ export function Canvas(props: Props) {
     })
   }, [nodes])
 
-  useEffect(() => setPendingInk([]), [strokes.length])
+  useEffect(() => {
+    setPendingInk([])
+    setErasing([])
+    setInkShift(null)
+  }, [strokes])
 
   const rectOf = useCallback(
     (key: string): Rect | null => {
@@ -354,16 +394,54 @@ export function Canvas(props: Props) {
       my: (a.y + b.y) / 2,
       view: viewRef.current,
       wantOut: false,
+      at: performance.now(),
+      moved: false,
     }
     setLive(null)
+    setInkShift(null)
   }
+
+  const strokeAt = (target: HTMLElement) => target.closest<SVGElement>('[data-stroke]')?.dataset.stroke
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement
     // Typing, and the selection's own buttons, are not canvas gestures.
     if (target.closest('textarea, input, select, [data-nocanvas]')) return
-    // While just reading, taps on links and buttons inside cards work normally.
-    if (!editing && target.closest('a, button, summary')) return
+    // While just reading, taps on links and buttons inside cards work normally…
+    if (!editing && target.closest('a, button, summary')) {
+      // …but a finger held still on one still selects the card it is in.
+      const held = target.closest<HTMLElement>('[data-node]')?.dataset.node
+      if (e.pointerType === 'touch' && held && props.onGrab) {
+        const grab = props.onGrab
+        const sx = e.clientX
+        const sy = e.clientY
+        const stop = () => {
+          cancelPress()
+          window.removeEventListener('pointerup', stop)
+          window.removeEventListener('pointercancel', stop)
+          window.removeEventListener('pointermove', moved)
+        }
+        const moved = (ev: PointerEvent) => {
+          if (Math.hypot(ev.clientX - sx, ev.clientY - sy) > 8) stop()
+        }
+        cancelPress()
+        press.current = setTimeout(() => {
+          stop()
+          // the link under the finger must not open when the finger lifts
+          const swallow = (ev: Event) => {
+            ev.preventDefault()
+            ev.stopPropagation()
+          }
+          window.addEventListener('click', swallow, { capture: true, once: true })
+          setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), 1500)
+          grab({ node: held })
+        }, LONG_PRESS)
+        window.addEventListener('pointerup', stop)
+        window.addEventListener('pointercancel', stop)
+        window.addEventListener('pointermove', moved)
+      }
+      return
+    }
     if (e.pointerType === 'mouse' && e.button !== 0) return
 
     const p = local(e)
@@ -371,50 +449,107 @@ export function Canvas(props: Props) {
     if (e.pointerType === 'pen') penSeen.current = true
     viewportRef.current?.setPointerCapture(e.pointerId)
 
+    cancelPress()
     if (pointers.current.size === 2) return startPinch()
     if (pointers.current.size > 2) return
 
     const key = target.closest<HTMLElement>('[data-node]')?.dataset.node
+    const strokeId = strokeAt(target)
+
+    // A finger held still on a thing or a stroke: select it and show what can be done with it.
+    if (e.pointerType === 'touch' && (key || strokeId) && props.onGrab && (!editing || tool === 'select')) {
+      const grab = props.onGrab
+      press.current = setTimeout(() => {
+        press.current = null
+        gesture.current = null
+        setOverrides({})
+        setInkShift(null)
+        grab(key ? { node: key } : { stroke: strokeId })
+      }, LONG_PRESS)
+    }
+
+    // Once a pencil has been used, a finger pans instead of drawing, erasing or lassoing (palm rejection).
+    const palm = e.pointerType === 'touch' && penSeen.current
     if (editing) {
-      // Once a pencil has been used, fingers pan instead of drawing (palm rejection).
-      if (tool === 'draw' && !(e.pointerType === 'touch' && penSeen.current)) {
+      if ((tool === 'pen' || tool === 'marker') && !palm) {
         const w = toWorld(p)
         const pen = e.pointerType === 'pen'
         gesture.current = { type: 'draw', points: [w.x, w.y, pen ? e.pressure || 0.5 : 0.5], pen }
+        return
+      }
+      if (tool === 'eraser' && !palm) {
+        gesture.current = { type: 'erase', ids: new Set() }
+        eraseAt(p, gesture.current.ids)
         return
       }
       if (tool === 'connect' && key) {
         gesture.current = { type: 'link', from: key }
         return
       }
-      if (tool === 'move') {
+      if (tool === 'select') {
         const node = key ? placed.find((n) => n.key === key) : undefined
         if (node && target.closest('[data-handle]')) {
           gesture.current = { type: 'resize', key: node.key, sx: p.x, w: node.w }
           return
         }
-        if (node) {
-          onSelect({ kind: 'node', id: node.key })
-          if (node.movable) {
-            gesture.current = { type: 'drag', key: node.key, sx: p.x, sy: p.y, x: node.x, y: node.y, moved: false }
+        if (node || strokeId) {
+          const isSelected = node ? selection.nodes.includes(node.key) : selection.strokes.includes(strokeId!)
+          if (e.shiftKey) {
+            // add to, or take out of, what is selected
+            onSelect({
+              link: null,
+              nodes: node ? (isSelected ? selection.nodes.filter((k) => k !== node.key) : [...selection.nodes, node.key]) : selection.nodes,
+              strokes: strokeId ? (isSelected ? selection.strokes.filter((k) => k !== strokeId) : [...selection.strokes, strokeId]) : selection.strokes,
+            })
             return
           }
-        } else {
-          const sel = target.closest<SVGElement>('[data-sel]')
-          if (sel) {
-            onSelect({ kind: sel.dataset.sel as 'link' | 'stroke', id: sel.dataset.id! })
-            return
+          const sel: Selection = isSelected ? selection : { nodes: node ? [node.key] : [], strokes: strokeId ? [strokeId] : [], link: null }
+          if (!isSelected) onSelect(sel)
+          // dragging one selected thing moves everything that is selected
+          gesture.current = {
+            type: 'drag',
+            sx: p.x,
+            sy: p.y,
+            moved: false,
+            nodes: placed.filter((n) => sel.nodes.includes(n.key) && n.movable).map((n) => ({ key: n.key, x: n.x, y: n.y })),
+            strokes: sel.strokes,
           }
-          onSelect(null)
+          return
+        }
+        const link = target.closest<SVGElement>('[data-sel="link"]')
+        if (link) {
+          onSelect({ nodes: [], strokes: [], link: link.dataset.id! })
+          return
+        }
+        if (!palm) {
+          const w = toWorld(p)
+          gesture.current = { type: 'lasso', points: [w], add: e.shiftKey, sx: p.x, sy: p.y }
+          return
         }
       }
     }
     gesture.current = { type: 'pan', sx: p.x, sy: p.y, view: viewRef.current }
   }
 
+  /** Marks every stroke the eraser touches at this point. */
+  const eraseAt = (p: { x: number; y: number }, ids: Set<string>) => {
+    const w = toWorld(p)
+    const reach = ERASER_REACH / viewRef.current.k
+    let changed = false
+    for (const s of strokes) {
+      if (ids.has(s.id)) continue
+      if (strokeTouched(s.points, w, reach + s.size / 2)) {
+        ids.add(s.id)
+        changed = true
+      }
+    }
+    if (changed) setErasing([...ids])
+  }
+
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!pointers.current.has(e.pointerId)) return
     const p = local(e)
+    const was = pointers.current.get(e.pointerId)!
     pointers.current.set(e.pointerId, p)
     const g = gesture.current
     if (!g) return
@@ -424,6 +559,7 @@ export function Canvas(props: Props) {
       case 'pinch': {
         const [a, b] = [...pointers.current.values()]
         if (!b) return
+        if (Math.hypot(p.x - was.x, p.y - was.y) > 0.5 && Math.abs(Math.hypot(a.x - b.x, a.y - b.y) - g.dist) + Math.hypot((a.x + b.x) / 2 - g.mx, (a.y + b.y) / 2 - g.my) > 10) g.moved = true
         const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
         const raw = (g.view.k * Math.hypot(a.x - b.x, a.y - b.y)) / g.dist
         const nk = Math.max(floorK(), Math.min(MAX_K, raw))
@@ -434,15 +570,21 @@ export function Canvas(props: Props) {
         return
       }
       case 'pan':
+        if (Math.hypot(p.x - g.sx, p.y - g.sy) > 8) cancelPress()
         setView({ ...g.view, x: g.view.x + p.x - g.sx, y: g.view.y + p.y - g.sy })
         return
       case 'drag': {
         if (!g.moved && Math.hypot(p.x - g.sx, p.y - g.sy) < DRAG_THRESHOLD) return
         g.moved = true
-        setOverrides((o) => ({ ...o, [g.key]: { ...o[g.key], x: g.x + (p.x - g.sx) / k, y: g.y + (p.y - g.sy) / k } }))
-        if (props.onDropOn) {
-          setDropTarget(document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-pile-drop]') ?? null)
-        }
+        cancelPress()
+        const dx = (p.x - g.sx) / k
+        const dy = (p.y - g.sy) / k
+        setOverrides((o) => {
+          const next = { ...o }
+          for (const n of g.nodes) next[n.key] = { ...o[n.key], x: n.x + dx, y: n.y + dy }
+          return next
+        })
+        if (g.strokes.length > 0) setInkShift({ dx, dy })
         return
       }
       case 'resize':
@@ -462,6 +604,15 @@ export function Canvas(props: Props) {
         setLive({ type: 'draw', points: g.points.slice() })
         return
       }
+      case 'lasso': {
+        if (Math.hypot(p.x - g.sx, p.y - g.sy) > 8) cancelPress()
+        g.points.push(toWorld(p))
+        setLive({ type: 'lasso', points: g.points.slice() })
+        return
+      }
+      case 'erase':
+        eraseAt(p, g.ids)
+        return
     }
   }
 
@@ -469,6 +620,7 @@ export function Canvas(props: Props) {
     if (!pointers.current.has(e.pointerId)) return
     const p = local(e)
     pointers.current.delete(e.pointerId)
+    cancelPress()
     const g = gesture.current
     if (!g) return
 
@@ -477,6 +629,14 @@ export function Canvas(props: Props) {
         gesture.current = null
         pointers.current.clear()
         zoomOut.current()
+        return
+      }
+      // Two fingers down and up again, quickly and without moving: a tap, not a pinch.
+      if (!g.moved && performance.now() - g.at < TAP_MS && props.onTwoFingerTap) {
+        gesture.current = null
+        pointers.current.clear()
+        setView(g.view)
+        props.onTwoFingerTap()
         return
       }
       // One finger lifted: carry on as a pan with the finger that is left.
@@ -488,36 +648,53 @@ export function Canvas(props: Props) {
     const k = viewRef.current.k
     const cancelled = e.type === 'pointercancel'
 
-    const droppedOn = dropTarget.current
-    setDropTarget(null)
-    if (g.type === 'drag' && g.moved && !cancelled && droppedOn && props.onDropOn) {
-      // Put into a pile: the card itself goes back to where it was.
-      props.onDropOn(g.key, droppedOn)
-      setOverrides((o) => {
-        const next = { ...o }
-        delete next[g.key]
-        return next
-      })
-    } else if (g.type === 'drag' && g.moved && !cancelled) {
-      props.onMove(g.key, g.x + (p.x - g.sx) / k, g.y + (p.y - g.sy) / k)
-    } else if (g.type === 'resize' && !cancelled) {
-      props.onResize(g.key, Math.max(160, g.w + (p.x - g.sx) / k))
+    if (g.type === 'drag') {
+      if (g.moved && !cancelled) {
+        const dx = (p.x - g.sx) / k
+        const dy = (p.y - g.sy) / k
+        props.onMoveMany(g.nodes.map((n) => ({ key: n.key, x: n.x + dx, y: n.y + dy })), g.strokes, dx, dy)
+      } else {
+        setInkShift(null)
+        if (cancelled) setOverrides({})
+      }
+    } else if (g.type === 'resize') {
+      if (!cancelled) props.onResize(g.key, Math.max(160, g.w + (p.x - g.sx) / k))
+      else setOverrides({})
     } else if (g.type === 'link' && !cancelled) {
       const under = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-node]')
       const to = under?.dataset.node
       if (to && to !== g.from) props.onLink(g.from, to)
     } else if (g.type === 'draw' && !cancelled && g.points.length >= 6) {
-      setPendingInk((prev) => [...prev, g.points])
+      setPendingInk((prev) => [...prev, { points: g.points, ink: props.ink, marker: tool === 'marker' }])
       props.onStroke(g.points)
-    }
-    if (cancelled && (g.type === 'drag' || g.type === 'resize')) {
-      setOverrides((o) => {
-        const next = { ...o }
-        delete next[g.key]
-        return next
-      })
+    } else if (g.type === 'lasso' && !cancelled) {
+      if (g.points.length < 4 || Math.hypot(p.x - g.sx, p.y - g.sy) + g.points.length < 8) {
+        // a tap on empty space: let go of the selection
+        if (!g.add) onSelect(NOTHING)
+      } else {
+        const inNodes = placed.filter((n) => rectInLasso({ x: n.x, y: n.y, w: n.w, h: heights[n.key] ?? 120 }, g.points)).map((n) => n.key)
+        const inStrokes = strokes.filter((st) => strokeInLasso(st.points, g.points)).map((st) => st.id)
+        onSelect({
+          link: null,
+          nodes: g.add ? [...new Set([...selection.nodes, ...inNodes])] : inNodes,
+          strokes: g.add ? [...new Set([...selection.strokes, ...inStrokes])] : inStrokes,
+        })
+      }
+    } else if (g.type === 'erase') {
+      if (g.ids.size > 0 && !cancelled) props.onErase([...g.ids])
+      else setErasing([])
     }
     setLive(null)
+  }
+
+  const onContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement
+    if (target.closest('textarea, input, [data-nocanvas]')) return
+    const key = target.closest<HTMLElement>('[data-node]')?.dataset.node
+    const strokeId = strokeAt(target)
+    if (!props.onGrab || (!key && !strokeId)) return
+    e.preventDefault()
+    props.onGrab(key ? { node: key } : { stroke: strokeId })
   }
 
   // ── geometry for connectors and the action bar ───────────────────────
@@ -540,31 +717,41 @@ export function Canvas(props: Props) {
     if (a) liveLink = linkPath(edgePoint(a, live), live)
   }
 
+  // The action bar sits above the middle of everything that is selected.
   let anchor: { x: number; y: number } | null = null
-  if (selection && props.actions) {
-    if (selection.kind === 'node') {
-      const r = rectOf(selection.id)
-      if (r) anchor = { x: r.x + r.w / 2, y: r.y }
-    } else if (selection.kind === 'link') {
-      anchor = linkShapes.find((s) => s.link.id === selection.id)?.mid ?? null
+  if (props.actions && selectionSize(selection) > 0) {
+    if (selection.link) {
+      anchor = linkShapes.find((s) => s.link.id === selection.link)?.mid ?? null
     } else {
-      const s = strokes.find((st) => st.id === selection.id)
-      if (s) {
-        let minY = Infinity
-        let sumX = 0
-        for (let i = 0; i < s.points.length; i += 3) {
-          sumX += s.points[i]
-          minY = Math.min(minY, s.points[i + 1])
-        }
-        anchor = { x: sumX / (s.points.length / 3), y: minY }
+      let minX = Infinity
+      let maxX = -Infinity
+      let minY = Infinity
+      for (const key of selection.nodes) {
+        const r = rectOf(key)
+        if (!r) continue
+        minX = Math.min(minX, r.x)
+        maxX = Math.max(maxX, r.x + r.w)
+        minY = Math.min(minY, r.y)
       }
+      for (const id of selection.strokes) {
+        const st = strokes.find((x) => x.id === id)
+        const b = st && strokeBounds(st.points)
+        if (!b) continue
+        minX = Math.min(minX, b.x + (inkShift?.dx ?? 0))
+        maxX = Math.max(maxX, b.x + b.w + (inkShift?.dx ?? 0))
+        minY = Math.min(minY, b.y + (inkShift?.dy ?? 0))
+      }
+      if (Number.isFinite(minX)) anchor = { x: (minX + maxX) / 2, y: minY }
     }
   }
   const vw = viewportRef.current?.clientWidth ?? 0
-  const barX = anchor ? Math.max(110, Math.min(vw - 110, anchor.x * view.k + view.x)) : 0
+  const half = Math.min(190, vw / 2 - 6)
+  const barX = anchor ? Math.max(half + 6, Math.min(vw - half - 6, anchor.x * view.k + view.x)) : 0
   const barY = anchor ? Math.max(topInset + 4, anchor.y * view.k + view.y - 56) : 0
 
-  const selectable = editing && tool === 'move'
+  const selectable = editing && tool === 'select'
+  const one = selection.nodes.length === 1 && selection.strokes.length === 0 ? selection.nodes[0] : null
+  const lassoPath = live?.type === 'lasso' && live.points.length > 1 ? `M${live.points.map((q) => `${q.x.toFixed(1)},${q.y.toFixed(1)}`).join(' L')} Z` : null
 
   return (
     <div
@@ -577,6 +764,7 @@ export function Canvas(props: Props) {
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onContextMenu={onContextMenu}
     >
       <div className="world" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})` }}>
         <svg className="layer links" aria-hidden="true">
@@ -586,7 +774,7 @@ export function Canvas(props: Props) {
             </marker>
           </defs>
           {linkShapes.map(({ link, d }) => (
-            <g key={link.id} className={selection?.kind === 'link' && selection.id === link.id ? 'is-selected' : undefined}>
+            <g key={link.id} className={selection.link === link.id ? 'is-selected' : undefined}>
               <path className="link-line" d={d} markerEnd={link.arrow ? 'url(#arrowhead)' : undefined} />
               {selectable && <path className="link-hit" d={d} data-sel="link" data-id={link.id} />}
             </g>
@@ -598,27 +786,35 @@ export function Canvas(props: Props) {
           <NodeView
             key={n.key}
             node={n}
-            selected={selection?.kind === 'node' && selection.id === n.key}
-            showHandle={selectable && n.resizable}
+            selected={selection.nodes.includes(n.key)}
+            showHandle={selectable && n.resizable && one === n.key}
             onMeasure={measure}
           />
         ))}
 
         <svg className="layer ink" aria-hidden="true">
-          {strokes.map((s) => (
-            <path
-              key={s.id}
-              d={strokePath(s.points, s.size)}
-              fill={s.color}
-              className={selection?.kind === 'stroke' && selection.id === s.id ? 'is-selected' : undefined}
-              data-sel={selectable ? 'stroke' : undefined}
-              data-id={s.id}
-            />
+          {strokes
+            .filter((s) => !erasing.includes(s.id))
+            .map((s) => {
+              const chosen = selection.strokes.includes(s.id)
+              return (
+                <path
+                  key={s.id}
+                  d={strokePath(s.points, s.size, s.pen === 'marker')}
+                  fill={s.color}
+                  fillOpacity={s.pen === 'marker' ? MARKER_OPACITY : undefined}
+                  className={chosen ? 'is-selected' : undefined}
+                  transform={chosen && inkShift ? `translate(${inkShift.dx} ${inkShift.dy})` : undefined}
+                  // always marked, so a right click or a long press can find it
+                  data-stroke={s.id}
+                />
+              )
+            })}
+          {pendingInk.map((pending, i) => (
+            <path key={`p${i}`} d={strokePath(pending.points, pending.ink.size, pending.marker)} fill={pending.ink.color} fillOpacity={pending.ink.opacity} />
           ))}
-          {pendingInk.map((pts, i) => (
-            <path key={`p${i}`} d={strokePath(pts, INK_SIZE)} fill={props.inkColor} />
-          ))}
-          {live?.type === 'draw' && <path d={strokePath(live.points, INK_SIZE)} fill={props.inkColor} />}
+          {live?.type === 'draw' && <path d={strokePath(live.points, props.ink.size, tool === 'marker')} fill={props.ink.color} fillOpacity={props.ink.opacity} />}
+          {lassoPath && <path className="lasso" d={lassoPath} />}
         </svg>
       </div>
 
@@ -631,7 +827,8 @@ export function Canvas(props: Props) {
   )
 }
 
-export const DEFAULT_INK_SIZE = INK_SIZE
+export const PEN_SIZE = INK_SIZE
+export const MARKER_SIZE = 18
 
 function NodeView({
   node,
