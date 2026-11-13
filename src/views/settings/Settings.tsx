@@ -347,7 +347,8 @@ function clock(iso: string): string {
 }
 
 export function Settings({ section }: { section?: string }) {
-  const imports = useLiveQuery(() => db.imports.orderBy('imported_at').reverse().limit(30).toArray())
+  // deleted imports (e.g. after clearing the notebook) are not listed; undone ones still are, marked as such
+  const imports = useLiveQuery(() => db.imports.orderBy('imported_at').reverse().filter((e) => !e.deleted).limit(30).toArray())
   const { requestUndo, dialog } = useUndo()
   const [openRaw, setOpenRaw] = useState<string | null>(null)
   const [backup, setBackup] = useState<{ text: string; error?: boolean } | null>(null)

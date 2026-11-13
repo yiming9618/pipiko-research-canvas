@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Card, ImportEntry, Pile, ResearchRecord, Setting } from '../domain/types'
+import type { Asset, Card, ImportEntry, Pile, ResearchRecord, Setting } from '../domain/types'
 import { syncOnce } from './engine'
 import { explainFailure } from './github'
 import { MemoryLocal, MemoryRemote } from './memory'
@@ -266,5 +266,30 @@ describe('令牌到期提醒', () => {
     expect(daysLeft('2027-02-09', '2027-02-20')).toBe(-11)
     expect(expiringSoon(null, '2027-02-20')).toBe(false)
     expect(expiringSoon('不是日期', '2027-02-20')).toBe(false)
+  })
+})
+
+describe('删除了的条目不再下载它的文件', () => {
+  it('新设备同步：删除了的导入和图片，不去读 raw/、assets/ 里的文件', async () => {
+    const remote = new MemoryRemote()
+    const a = new MemoryLocal()
+    a.write('imports', imp('i1', 1, '原始的 Markdown'))
+    a.write('assets', { id: 'pic', mime: 'image/png', w: 1, h: 1, data: 'AAAA', updated_at: at(1) } as Asset)
+    await syncOnce(a, remote, now)
+    a.write('imports', { ...imp('i1', 1, '原始的 Markdown'), deleted: true, updated_at: at(9) })
+    a.write('assets', { id: 'pic', mime: 'image/png', w: 1, h: 1, data: 'AAAA', deleted: true, updated_at: at(9) } as Asset)
+    await syncOnce(a, remote, now)
+
+    const read: string[] = []
+    const original = remote.read.bind(remote)
+    remote.read = async (path: string) => {
+      read.push(path)
+      return original(path)
+    }
+    const fresh = new MemoryLocal()
+    await syncOnce(fresh, remote, now)
+    expect(read.some((p) => p.startsWith('raw/') || p.startsWith('assets/'))).toBe(false)
+    expect(fresh.get<ImportEntry>('imports', 'i1')?.deleted).toBe(true)
+    expect(fresh.get<Asset>('assets', 'pic')?.deleted).toBe(true)
   })
 })

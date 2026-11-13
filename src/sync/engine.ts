@@ -167,6 +167,8 @@ async function withPayload(
   if (!payload) return entry
   const have = (localCopy as Record<string, unknown> | undefined)?.[payload.field]
   if (typeof have === 'string') return { ...entry, [payload.field]: have } as Synced
+  // a deleted entry is never shown: its file (original Markdown, picture) is not fetched
+  if (entry.deleted) return { ...entry, [payload.field]: '' } as Synced
   if (!snap.files.has(payload.path)) return { ...entry, [payload.field]: '' } as Synced
   return { ...entry, [payload.field]: await remote.read(payload.path, payload.encoding) } as Synced
 }
