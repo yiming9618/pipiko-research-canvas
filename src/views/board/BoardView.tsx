@@ -870,9 +870,7 @@ export function BoardView({ boardId, focus }: Props) {
         topInset={72}
         ink={{ color: ink.color, size: tool === 'marker' ? MARKER_SIZE : PEN_SIZE, opacity: tool === 'marker' ? MARKER_OPACITY : 1 }}
         apiRef={api}
-        onZoomOut={() => {
-          window.location.hash = back
-        }}
+        // no onZoomOut: pinching in a board only zooms the board, and stops at its smallest size
       />
 
       {isEditing && (tool === 'pen' || tool === 'marker') && (

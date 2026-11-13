@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { IconBook, IconClose } from '../../ui/icons'
+import { IconBook, IconClose, IconExpand, IconShrink } from '../../ui/icons'
 import { TopNav } from '../../ui/TopNav'
 import { LibraryList } from '../library/LibraryList'
 import { BoardView } from './BoardView'
@@ -25,11 +25,24 @@ function savedWidth(): number {
  */
 export function BoardPage({ boardId, focus }: { boardId: string; focus?: string }) {
   const [open, setOpen] = useState(false)
+  /** Only the board: navigation, header and bars hidden, for writing, looking and screenshots. */
+  const [immersive, setImmersive] = useState(false)
   const [width, setWidth] = useState(savedWidth)
   /** Phone: a paper is being dragged out, so the list steps aside to show the board. */
   const [away, setAway] = useState(false)
   const narrow = useNarrow()
   const drag = useRef<{ x: number; w: number } | null>(null)
+
+  // Esc brings the interface back (Mac)
+  useEffect(() => {
+    if (!immersive) return
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName
+      if (e.key === 'Escape' && tag !== 'INPUT' && tag !== 'TEXTAREA') setImmersive(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [immersive])
 
   useEffect(() => {
     if (!open) return
@@ -75,7 +88,7 @@ export function BoardPage({ boardId, focus }: { boardId: string; focus?: string 
   }
 
   return (
-    <div className="boardpage">
+    <div className={`boardpage${immersive ? ' is-immersive' : ''}`}>
       <TopNav current="board" />
       <div className={`board-body${open ? ' has-side' : ''}`} style={open && !narrow ? { gridTemplateColumns: `${width}px minmax(0, 1fr)` } : undefined}>
         {open && (
@@ -111,6 +124,19 @@ export function BoardPage({ boardId, focus }: { boardId: string; focus?: string 
               <IconBook />
             </button>
           )}
+          <button
+            type="button"
+            className="icon-btn immersive-toggle"
+            aria-pressed={immersive}
+            aria-label={immersive ? '显示界面' : '隐藏界面'}
+            title={immersive ? '显示界面' : '隐藏界面'}
+            onClick={() => {
+              setOpen(false)
+              setImmersive(!immersive)
+            }}
+          >
+            {immersive ? <IconShrink /> : <IconExpand />}
+          </button>
           <BoardView key={boardId} boardId={boardId} focus={focus} />
         </main>
       </div>

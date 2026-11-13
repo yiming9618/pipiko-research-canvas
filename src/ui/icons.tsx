@@ -197,3 +197,17 @@ export const IconGrip = () => (
     <path d="M9 6h.010M15 6h.010M9 12h.010M15 12h.010M9 18h.010M15 18h.010" strokeWidth="2.4" />
   </Icon>
 )
+
+/** Enter immersive mode: corners pushed outward. */
+export const IconExpand = () => (
+  <Icon>
+    <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+  </Icon>
+)
+
+/** Leave immersive mode: corners pulled in. */
+export const IconShrink = () => (
+  <Icon>
+    <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
+  </Icon>
+)

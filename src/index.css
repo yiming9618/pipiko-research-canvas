@@ -4119,3 +4119,47 @@ body.is-pointer-dragging {
   user-select: none;
   -webkit-touch-callout: none;
 }
+
+/* ── immersive mode: only the board ──────────────────── */
+
+.immersive-toggle {
+  position: absolute;
+  right: 8px;
+  top: 62px;
+  z-index: 7;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: 0 4px 12px rgba(120, 60, 70, 0.1);
+}
+
+/* Hidden: navigation, the board's header, the library button and sidebar, the bottom buttons,
+   the toolbar and its colour tray and hints. The current tool stays as it was, so writing
+   with the pencil carries on. Selection bars, dialogs and the sync warning still appear. */
+.boardpage.is-immersive .topnav,
+.boardpage.is-immersive .board-head,
+.boardpage.is-immersive .side-open,
+.boardpage.is-immersive .board-side,
+.boardpage.is-immersive .view-tools,
+.boardpage.is-immersive .edit-toggle,
+.boardpage.is-immersive .toolbar,
+.boardpage.is-immersive .ink-colors,
+.boardpage.is-immersive .tool-hint,
+.boardpage.is-immersive .board-empty {
+  display: none !important;
+}
+
+.boardpage.is-immersive .board-body {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.boardpage.is-immersive .immersive-toggle {
+  top: max(8px, env(safe-area-inset-top));
+  right: max(8px, env(safe-area-inset-right));
+  opacity: 0.55;
+  transition: opacity var(--fast) ease;
+}
+
+.boardpage.is-immersive .immersive-toggle:hover,
+.boardpage.is-immersive .immersive-toggle:focus-visible {
+  opacity: 1;
+}
