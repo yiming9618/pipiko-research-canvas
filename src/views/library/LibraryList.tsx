@@ -1,12 +1,15 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { HighlightType, Paper } from '../../domain/types'
 import { db } from '../../store/db'
 import { markRead, retryLookup } from '../../store/paperActions'
 import { shortDate } from '../../domain/importer'
 import { AddPaperForm, EditPaperForm } from './PaperForm'
 import { AddToDiscussion } from '../discussions/AddToDiscussion'
-import { watchPointerDrag } from '../../ui/pointerDrag'
+import { POINTER_DROP, watchPointerDrag, type PointerDrop } from '../../ui/pointerDrag'
+import { fieldOfPaper } from '../../domain/migrate'
+import { setPaperField } from '../../store/fieldActions'
+import { toast } from '../../ui/toast'
 import { boardHref } from '../../domain/boards'
 import { recordBoardId } from '../../domain/migrate'
 import { IconChevron, IconEdit, IconGrip, IconPlus } from '../../ui/icons'
@@ -40,6 +43,7 @@ export function LibraryList({ activeId, onDragOut }: ListProps) {
   const papers = useLiveQuery(() => db.papers.filter((p) => !p.deleted).toArray())
   const blocks = useLiveQuery(() => db.blocks.filter((b) => !b.deleted && b.type_id !== null).toArray())
   const types = useLiveQuery(() => db.types.filter((t) => !t.deleted).toArray())
+  const fields = useLiveQuery(() => db.fields.toArray())
   const imports = useLiveQuery(() =>
     db.imports.filter((e) => e.kind === 'paper' && !e.undone && !e.deleted).toArray(),
   )
@@ -86,16 +90,38 @@ export function LibraryList({ activeId, onDragOut }: ListProps) {
 
   const shown = typeFilter ? read.filter((p) => typesOfPaper.get(p.id)?.some((t) => t.id === typeFilter)) : read
 
+  /** One group per field (empty fields too, so papers can be pulled into them), 未分类 last. Keyed by field id, '' for 未分类. */
   const groups = useMemo(() => {
-    const map = new Map<string, Paper[]>()
+    const live = (fields ?? []).filter((f) => !f.deleted)
+    const map = new Map<string, { name: string; papers: Paper[] }>()
+    if (!typeFilter) for (const f of live) map.set(f.id, { name: f.name, papers: [] })
     for (const p of shown) {
-      const key = p.category || UNCATEGORISED
-      map.set(key, [...(map.get(key) ?? []), p])
+      const field = fieldOfPaper(p, live)
+      const key = field?.id ?? ''
+      if (!map.has(key)) map.set(key, { name: field?.name ?? UNCATEGORISED, papers: [] })
+      map.get(key)!.papers.push(p)
     }
     return [...map.entries()]
-      .sort(([a], [b]) => (a === UNCATEGORISED ? 1 : b === UNCATEGORISED ? -1 : a.localeCompare(b, 'zh')))
-      .map(([name, list]) => [name, list.sort((a, b) => a.title.localeCompare(b.title, 'zh'))] as const)
-  }, [shown])
+      .sort(([a, x], [b, y]) => (a === '' ? 1 : b === '' ? -1 : x.name.localeCompare(y.name, 'zh')))
+      .map(([id, g]) => ({ id, name: g.name, papers: g.papers.sort((a, b) => a.title.localeCompare(b.title, 'zh')) }))
+  }, [shown, fields, typeFilter])
+
+  // A paper let go on a field's heading moves into that field (see ui/pointerDrag).
+  useEffect(() => {
+    const onDropped = (e: Event) => {
+      const { ref, clientX, clientY } = (e as CustomEvent<PointerDrop>).detail
+      if (ref.type !== 'paper') return
+      const head = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>('[data-field-drop]')
+      const paper = papers?.find((p) => p.id === ref.id)
+      if (!head || !paper) return
+      const target = head.dataset.fieldDrop ?? ''
+      const now = fieldOfPaper(paper, fields ?? [])?.id ?? ''
+      if (target === now) return
+      void setPaperField(paper, target).then(() => toast(`「${paper.title || '论文'}」已放进${target ? `领域「${head.dataset.fieldName}」` : '“未分类”'}`))
+    }
+    document.addEventListener(POINTER_DROP, onDropped)
+    return () => document.removeEventListener(POINTER_DROP, onDropped)
+  }, [papers, fields])
 
   const pickTab = (next: 'read' | 'want') => {
     setTab(next)
@@ -166,15 +192,18 @@ export function LibraryList({ activeId, onDragOut }: ListProps) {
             <p className="empty">没有带这个重点的论文。</p>
           )}
 
-          {groups.map(([name, list]) => {
-            const open = !closed.includes(name)
+          {groups.map(({ id: groupId, name, papers: list }) => {
+            const open = !closed.includes(groupId || UNCATEGORISED) && list.length > 0
             return (
-              <section key={name} className="group">
+              <section key={groupId || UNCATEGORISED} className="group">
                 <button
                   type="button"
                   className="group-head"
                   aria-expanded={open}
-                  onClick={() => toggleGroup(name)}
+                  data-field-drop={groupId}
+                  data-field-name={name}
+                  data-drop-target
+                  onClick={() => toggleGroup(groupId || UNCATEGORISED)}
                 >
                   <span>{name}</span>
                   <span className="group-count">{list.length}</span>
@@ -199,23 +228,17 @@ export function LibraryList({ activeId, onDragOut }: ListProps) {
                             aria-current={p.id === activeId ? 'page' : undefined}
                             // dragged with Pointer Events, so it works with a finger as well as the mouse
                             draggable={false}
-                            data-drag={onDragOut ? '' : undefined}
-                            onPointerDown={
-                              onDragOut
-                                ? (e) => {
-                                    if (e.pointerType === 'mouse' && e.button !== 0) return
-                                    // from the grip a finger can pull in any direction; elsewhere on the row, sideways only
-                                    const grip = !!(e.target as HTMLElement).closest('[data-grip]')
-                                    watchPointerDrag(e, { type: 'paper', id: p.id }, p.title || '（没有标题）', onDragOut, grip)
-                                  }
-                                : undefined
-                            }
+                            data-drag=""
+                            onPointerDown={(e) => {
+                              if (e.pointerType === 'mouse' && e.button !== 0) return
+                              // from the grip a finger can pull in any direction; elsewhere on the row, sideways only
+                              const grip = !!(e.target as HTMLElement).closest('[data-grip]')
+                              watchPointerDrag(e, { type: 'paper', id: p.id }, p.title || '（没有标题）', onDragOut, grip)
+                            }}
                           >
-                            {onDragOut && (
-                              <span className="row-grip" data-grip aria-hidden="true">
-                                <IconGrip />
-                              </span>
-                            )}
+                            <span className="row-grip" data-grip aria-hidden="true">
+                              <IconGrip />
+                            </span>
                             <span className="paper-row-title">{p.title || '（没有标题）'}</span>
                             {meta.length > 0 && <span className="paper-row-meta">{meta.join(' · ')}</span>}
                             {dots.length > 0 && (
@@ -234,6 +257,12 @@ export function LibraryList({ activeId, onDragOut }: ListProps) {
               </section>
             )
           })}
+          {read.length > 0 && (
+            <p className="lib-foot">
+              按住论文右边的把手，拖到某个领域的标题上，就能换领域。
+              <a href="#/settings?section=fields">管理领域</a>
+            </p>
+          )}
         </>
       )}
 

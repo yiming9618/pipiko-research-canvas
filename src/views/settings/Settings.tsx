@@ -1,14 +1,16 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { shortDate } from '../../domain/importer'
-import type { HighlightType, ImportEntry } from '../../domain/types'
+import type { Field, HighlightType, ImportEntry } from '../../domain/types'
+import { fieldOfPaper } from '../../domain/migrate'
+import { createField, deleteField, renameField } from '../../store/fieldActions'
 import { downloadJson, exportAll, importBackup, parseBackup } from '../../store/backup'
 import { db, todayLocal } from '../../store/db'
 import { sampleImports } from '../../dev/samples'
 import { runImport } from '../../store/actions'
 import { saveType } from '../../store/paperActions'
 import { backupBeforeBoards, currentBoardCheck, deleteBackupBeforeBoards, ensureBoards, lastMigrationReport } from '../../store/migration'
-import { IconDownload, IconUndo, IconUpload } from '../../ui/icons'
+import { IconClose, IconDownload, IconUndo, IconUpload } from '../../ui/icons'
 import { TopNav } from '../../ui/TopNav'
 import { useUndo } from '../../ui/useUndo'
 import { SyncSection } from './SyncSection'
@@ -71,6 +73,92 @@ function TypeEditor() {
           </li>
         ))}
       </ul>
+    </section>
+  )
+}
+
+/** Fields (领域): make, rename, delete. A paper belongs to at most one. */
+function FieldEditor({ focus }: { focus: boolean }) {
+  const fields = useLiveQuery(() => db.fields.filter((f) => !f.deleted).toArray())
+  const papers = useLiveQuery(() => db.papers.filter((p) => !p.deleted && p.status === 'read').toArray())
+  const [name, setName] = useState('')
+  const [note, setNote] = useState('')
+  const ref = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    if (focus && fields) ref.current?.scrollIntoView({ block: 'start' })
+  }, [focus, fields !== undefined])
+
+  const count = (f: Field) => (papers ?? []).filter((p) => fieldOfPaper(p, fields ?? [])?.id === f.id).length
+  const sorted = [...(fields ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'zh'))
+  const say = (text: string) => {
+    setNote(text)
+    setTimeout(() => setNote(''), 3200)
+  }
+
+  return (
+    <section className="section" aria-labelledby="s-fields" ref={ref}>
+      <h2 id="s-fields">领域</h2>
+      <p className="section-note">一篇论文属于一个领域，论文库按领域分组。改名后所有论文跟着变；删除领域，里面的论文变回“未分类”，论文本身不受影响。</p>
+      {fields && sorted.length === 0 && <p className="empty">还没有领域。导入论文时，Markdown 里的 category 会自动变成领域。</p>}
+      <ul className="type-list">
+        {sorted.map((f) => (
+          <li key={f.id} className="type-row field-row">
+            <label className="type-name">
+              <span className="sr-only">领域名称</span>
+              <input
+                key={f.name}
+                defaultValue={f.name}
+                onBlur={(e) => {
+                  const next = e.target.value
+                  void renameField(f, next).then((r) => {
+                    if (r !== 'done') {
+                      e.target.value = f.name
+                      say(r === 'taken' ? `已经有叫「${next.trim()}」的领域了` : '领域的名字不能是空的')
+                    }
+                  })
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.currentTarget.blur()
+                }}
+              />
+            </label>
+            <span className="field-count">{count(f)} 篇</span>
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label={`删除领域：${f.name}`}
+              onClick={() => {
+                const n = count(f)
+                if (window.confirm(`删除领域「${f.name}」？${n > 0 ? `里面的 ${n} 篇论文会变回“未分类”。` : ''}`)) void deleteField(f)
+              }}
+            >
+              <IconClose />
+            </button>
+          </li>
+        ))}
+      </ul>
+      <form
+        className="box-new"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void createField(name).then((out) => {
+            if (out === 'taken') say('已经有同名的领域了')
+            else if (out !== 'empty') setName('')
+          })
+        }}
+      >
+        <label>
+          <span className="sr-only">新领域的名字</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="新领域的名字" maxLength={40} />
+        </label>
+        <button type="submit" className="btn" disabled={!name.trim()}>
+          新建
+        </button>
+      </form>
+      <p className="status-line is-error" role="status">
+        {note}
+      </p>
     </section>
   )
 }
@@ -157,7 +245,7 @@ function clock(iso: string): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-export function Settings() {
+export function Settings({ section }: { section?: string }) {
   const imports = useLiveQuery(() => db.imports.orderBy('imported_at').reverse().limit(30).toArray())
   const { requestUndo, dialog } = useUndo()
   const [openRaw, setOpenRaw] = useState<string | null>(null)
@@ -235,6 +323,8 @@ export function Settings() {
       </section>
 
       <TypeEditor />
+
+      <FieldEditor focus={section === 'fields'} />
 
       {import.meta.env.DEV && <Samples />}
 

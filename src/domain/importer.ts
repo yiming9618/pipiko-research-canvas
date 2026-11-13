@@ -4,9 +4,11 @@
 import { normalizeInput } from '../parser/frontmatter'
 import { parseMarkdown, type ParsedPaper, type ParsedResearch } from '../parser'
 import { SIMILAR_ENOUGH, titleSimilarity } from './similar'
+import { fieldOfPaper, normalizeFieldName } from './migrate'
 import {
   BUILTIN_TYPES,
   type Board,
+  type Field,
   DEFAULT_TYPE_COLOR,
   type Card,
   type Changes,
@@ -28,6 +30,8 @@ export interface ImportContext {
   types: HighlightType[]
   blocks: PaperBlock[]
   imports: ImportEntry[]
+  /** All fields (a paper's `category` is matched against them). */
+  fields?: Field[]
   /** All boards (research imports go onto one). */
   boards?: Board[]
   /**
@@ -359,6 +363,23 @@ function importPaper(
     paper.keywords = [...existing.keywords, ...effects.keywords_added]
   }
 
+  // The field: `category` is matched to an existing field by name, or a new field is made.
+  // An existing paper keeps the field it has (also when it was set to 未分类 on purpose).
+  const newFields: Field[] = []
+  const category = parsed.category.trim()
+  const fieldless = !existing || (existing.field_id === undefined && !fieldOfPaper(existing, ctx.fields ?? []))
+  if (category && fieldless) {
+    const key = normalizeFieldName(category)
+    let field = (ctx.fields ?? []).find((f) => !f.deleted && normalizeFieldName(f.name) === key)
+    if (!field) {
+      field = { id: ctx.newId('field'), name: category, created_at: ctx.now, updated_at: ctx.now }
+      newFields.push(field)
+      effects.fields_created = [field.id]
+    }
+    paper.field_id = field.id
+    if (existing) effects.field_set = true
+  }
+
   const types = [...ctx.types]
   const newTypes: HighlightType[] = []
   const typeIdFor = (name: string): string => {
@@ -441,5 +462,5 @@ function importPaper(
     }
   }
 
-  return { changes: { papers: [paper], blocks, comments, types: newTypes }, similar }
+  return { changes: { papers: [paper], blocks, comments, types: newTypes, ...(newFields.length > 0 ? { fields: newFields } : {}) }, similar }
 }

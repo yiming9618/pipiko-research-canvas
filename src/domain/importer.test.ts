@@ -28,6 +28,7 @@ function makeStore() {
   const ctx = (kindHint: 'paper' | 'research'): ImportContext => ({
     papers: tables.papers,
     types: tables.types,
+    fields: tables.fields,
     blocks: tables.blocks,
     imports: tables.imports,
     today: '2026-11-11',
@@ -405,5 +406,54 @@ describe('研究记录放进哪块画板', () => {
     expect(out.stored).toBe(true)
     expect(out.board).toBeUndefined()
     expect(out.changes.boards).toBeUndefined()
+  })
+})
+
+describe('论文领域', () => {
+  const md = (title: string, category: string, doi = '') =>
+    `---\ntype: paper\ntitle: ${title}\n${doi ? `doi: ${doi}\n` : ''}${category ? `category: ${category}\n` : ''}date: 2026-11-10\n---\n## 一句话总结\n总结\n`
+
+  it('category 对不上已有领域：新建一个领域，论文归入', () => {
+    const { tables, run } = makeStore()
+    const out = run(md('论文一', 'Living media'), 'paper')
+    expect(tables.fields).toHaveLength(1)
+    expect(tables.fields[0].name).toBe('Living media')
+    expect(tables.papers[0].field_id).toBe(tables.fields[0].id)
+    expect(out.entry?.effects?.fields_created).toEqual([tables.fields[0].id])
+  })
+
+  it('category 对上已有领域（不看大小写和空格）：归入，不新建', () => {
+    const { tables, run } = makeStore()
+    run(md('论文一', 'Living media'), 'paper')
+    run(md('论文二', ' living  MEDIA '), 'paper')
+    expect(tables.fields).toHaveLength(1)
+    expect(tables.papers.map((p) => p.field_id)).toEqual([tables.fields[0].id, tables.fields[0].id])
+  })
+
+  it('没写 category：未分类，不建领域', () => {
+    const { tables, run } = makeStore()
+    run(md('论文一', ''), 'paper')
+    expect(tables.fields).toHaveLength(0)
+    expect(tables.papers[0].field_id).toBeUndefined()
+  })
+
+  it('再次导入同一篇：已有的领域不被覆盖，包括我特意设成的未分类', () => {
+    const { tables, run } = makeStore()
+    run(md('论文一', '霉菌', '10.1/a'), 'paper')
+    const first = tables.papers[0].field_id
+    run(md('论文一', '别的领域', '10.1/a'), 'paper')
+    expect(tables.papers[0].field_id).toBe(first)
+    expect(tables.fields).toHaveLength(1)
+    tables.papers[0] = { ...tables.papers[0], field_id: '' }
+    run(md('论文一', '又一个领域', '10.1/a') + '\n', 'paper')
+    expect(tables.papers[0].field_id).toBe('')
+  })
+
+  it('想看的论文没有领域，导入后得到 Markdown 里的领域', () => {
+    const { tables, run } = makeStore()
+    tables.papers.push({ id: 'w', title: '论文一', authors: [], year: null, venue: '', doi: '', category: '', keywords: [], status: 'want', url: '', one_liner: '', basics_md: '', created_at: 't', updated_at: 't' } as Paper)
+    const out = run(md('论文一', '霉菌'), 'paper')
+    expect(tables.papers[0].field_id).toBe(tables.fields[0].id)
+    expect(out.entry?.effects?.field_set).toBe(true)
   })
 })

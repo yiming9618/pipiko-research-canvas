@@ -46,7 +46,7 @@ export default function App() {
   }, [old, path])
 
   let page = <Home />
-  if (path === '/settings') page = <Settings />
+  if (path === '/settings') page = <Settings section={new URLSearchParams(query).get('section') ?? undefined} />
   else if (path === '/boards' || path === '/board') page = <BoardsPage />
   else if (path.startsWith('/board/')) page = /^\d{4}(-\d{2}){0,2}$/.test(old) ? <BoardsPage /> : <BoardPage boardId={old} focus={focus} />
   else if (path.startsWith('/pile/')) page = <PilePage id={rest('/pile/')} />

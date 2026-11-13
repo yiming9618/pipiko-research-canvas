@@ -130,3 +130,16 @@ describe('在这台设备上执行迁移', () => {
     expect(await db.boards.count()).toBe(3)
   })
 })
+
+describe('领域的名字不重复', () => {
+  it('两次改名几乎同时发生：只有一个能用这个名字', async () => {
+    const { createField, renameField } = await import('./fieldActions')
+    const a = await createField('甲')
+    const b = await createField('乙')
+    if (typeof a === 'string' || typeof b === 'string') throw new Error('not created')
+    const [r1, r2] = await Promise.all([renameField(a, '同名'), renameField(b, '同名')])
+    expect([r1, r2].sort()).toEqual(['done', 'taken'])
+    expect((await db.fields.toArray()).filter((f) => f.name === '同名')).toHaveLength(1)
+    expect(await createField(' 同名 ')).toBe('taken')
+  })
+})

@@ -4,7 +4,7 @@
 import { KIND_COLOR } from '../domain/colors'
 import type { Doc, TypeNames } from '../domain/search'
 import { boardHref } from '../domain/boards'
-import { homeBoardId, recordBoardId } from '../domain/migrate'
+import { fieldOfPaper, homeBoardId, recordBoardId } from '../domain/migrate'
 import { db } from './db'
 
 export interface SearchData {
@@ -15,7 +15,7 @@ export interface SearchData {
 const day = (iso: string) => iso.slice(0, 10)
 
 export async function loadSearchData(): Promise<SearchData> {
-  const [papers, blocks, types, comments, records, cards, piles, imports, boardItems, boards] = await Promise.all([
+  const [papers, blocks, types, comments, records, cards, piles, imports, boardItems, boards, fields] = await Promise.all([
     db.papers.filter((p) => !p.deleted).toArray(),
     db.blocks.filter((b) => !b.deleted).toArray(),
     db.types.filter((t) => !t.deleted).toArray(),
@@ -26,6 +26,7 @@ export async function loadSearchData(): Promise<SearchData> {
     db.imports.filter((e) => !e.deleted && !e.undone).toArray(),
     db.boardItems.filter((i) => !i.deleted && i.ref_type === 'card' && i.text_override !== undefined).toArray(),
     db.boards.filter((b) => !b.deleted).toArray(),
+    db.fields.filter((f) => !f.deleted).toArray(),
   ])
 
   const importDate = new Map(imports.map((e) => [e.id, e.date]))
@@ -43,7 +44,7 @@ export async function loadSearchData(): Promise<SearchData> {
       kind: 'paper',
       dates: read.length > 0 ? [...new Set(read)] : [day(p.created_at)],
       title: p.title,
-      keywords: [...p.keywords, p.category, p.authors.join(' '), p.venue, p.doi, p.year ?? ''].join(' '),
+      keywords: [...p.keywords, fieldOfPaper(p, fields)?.name ?? '', p.authors.join(' '), p.venue, p.doi, p.year ?? ''].join(' '),
       body: [p.one_liner, p.basics_md].filter(Boolean).join('\n'),
       deep: [...ownBlocks.map((b) => b.edited_md ?? b.body_md), ...ownComments.map((c) => c.text)].join('\n'),
       label: p.status === 'want' ? '想看' : '论文',

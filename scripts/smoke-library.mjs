@@ -255,7 +255,7 @@ for (const size of sizes) {
 
   // ── rename + recolour the unknown type (it is still in the list even though its block was deleted)
   await page.goto(`${url}#/settings`)
-  const row = page.locator('.type-row', { has: page.locator('input') })
+  const row = page.locator('.type-row:not(.field-row)', { has: page.locator('input') })
   await row.locator('input').fill('研究伦理')
   await row.locator('input').blur()
   await row.locator('select').selectOption('yellow')

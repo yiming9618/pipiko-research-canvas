@@ -41,6 +41,10 @@ export interface PaperImportEffects {
   filled: PaperFillable[]
   keywords_added: string[]
   types_created: string[]
+  /** The paper had no field and this import gave it one (from `category`). */
+  field_set?: boolean
+  /** Fields this import created because `category` matched none. */
+  fields_created?: string[]
   /** A "想看" entry the person confirmed was this paper; kept whole so undo can bring it back. */
   merged_want?: Paper
 }

@@ -12,6 +12,7 @@ import { AddToDiscussion } from '../discussions/AddToDiscussion'
 import { CommentRail } from './CommentRail'
 import { EditPaperForm } from './PaperForm'
 import { PaperExport } from './PaperExport'
+import { FieldPicker } from './FieldPicker'
 
 export function PaperPage({ id }: { id: string }) {
   const [editingInfo, setEditingInfo] = useState(false)
@@ -72,8 +73,8 @@ export function PaperPage({ id }: { id: string }) {
                 打开链接
               </a>
             )}
-            {paper.category && <span className="tag">{paper.category}</span>}
           </p>
+          <FieldPicker paper={paper} />
           {paper.lookup === 'pending' && <p className="paper-meta">文献信息还没查到，联网后会自动补上</p>}
           {paper.why && <p className="want-why">{paper.why}</p>}
           {editingInfo ? (

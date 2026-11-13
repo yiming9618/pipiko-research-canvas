@@ -3,6 +3,7 @@
 
 import type {
   BoardItem,
+  Field,
   Card,
   Changes,
   Comment,
@@ -28,6 +29,7 @@ export interface UndoSnapshot {
   boardItems: BoardItem[]
   connectors: Connector[]
   piles: Pile[]
+  fields?: Field[]
   /** Papers the person has put somewhere on purpose (a discussion box); never removed silently. */
   keptPaperIds?: Set<string>
 }
@@ -140,6 +142,7 @@ export function planUndo(entry: ImportEntry, snap: UndoSnapshot, now: ISODateTim
         else restored[key] = ''
       }
       restored.keywords = paper.keywords.filter((k) => !effects.keywords_added.includes(k))
+      if (effects.field_set) delete restored.field_id
       if (effects.want_before && !otherImports) {
         restored.status = 'want'
         restored.title = effects.want_before.title
@@ -163,6 +166,14 @@ export function planUndo(entry: ImportEntry, snap: UndoSnapshot, now: ISODateTim
     )
     changes.types = live(snap.types)
       .filter((t) => effects.types_created.includes(t.id) && !stillUsed.has(t.id))
+      .map(tomb)
+  }
+
+  // a field made by this import goes too, unless another paper has been put in it since
+  if (effects?.fields_created && effects.fields_created.length > 0) {
+    const used = new Set(live(snap.papers).filter((p) => p.id !== entry.paper_id).map((p) => p.field_id))
+    changes.fields = live(snap.fields ?? [])
+      .filter((f) => effects.fields_created!.includes(f.id) && !used.has(f.id))
       .map(tomb)
   }
 

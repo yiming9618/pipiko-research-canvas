@@ -40,6 +40,7 @@ function makeStore() {
     const out = planImport(md, {
       papers: t.papers,
       types: t.types,
+      fields: t.fields,
       blocks: t.blocks,
       imports: t.imports,
       today: '2026-11-11',
@@ -288,5 +289,24 @@ describe('撤销：AI 提到的想看、确认合并的想看', () => {
     const left = s.live(s.t.papers)
     expect(left).toHaveLength(1)
     expect(left[0]).toMatchObject({ id: 'w1', status: 'want', title: 'living media draft', why: '导师推荐' })
+  })
+})
+
+describe('撤销论文导入时的领域', () => {
+  const md = (title: string, category: string) => `---\ntype: paper\ntitle: ${title}\ncategory: ${category}\ndate: 2026-11-10\n---\n## 一句话总结\n总结\n`
+
+  it('这次导入新建的领域随之删除', () => {
+    const s = makeStore()
+    const e = s.run(md('论文一', '霉菌'), 'paper')
+    s.undo(e.id).commit()
+    expect(s.live(s.t.fields)).toHaveLength(0)
+  })
+
+  it('之后又有论文放进了这个领域：领域保留', () => {
+    const s = makeStore()
+    const e = s.run(md('论文一', '霉菌'), 'paper')
+    s.run(md('论文二', '霉菌'), 'paper')
+    s.undo(e.id).commit()
+    expect(s.live(s.t.fields).map((f) => f.name)).toEqual(['霉菌'])
   })
 })

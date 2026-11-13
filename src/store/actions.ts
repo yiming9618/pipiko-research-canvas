@@ -16,7 +16,7 @@ export interface ImportOptions {
 }
 
 export async function runImport(raw: string, kindHint: ImportKind, options: ImportOptions = {}): Promise<ImportOutcome> {
-  const [papers, types, blocks, imports, boards, boardUse, placeOn] = await Promise.all([
+  const [papers, types, blocks, imports, boards, boardUse, placeOn, fields] = await Promise.all([
     db.papers.toArray(),
     db.types.toArray(),
     db.blocks.toArray(),
@@ -24,6 +24,7 @@ export async function runImport(raw: string, kindHint: ImportKind, options: Impo
     db.boards.toArray(),
     db.boardUse.toArray(),
     placeOnBoard(),
+    db.fields.toArray(),
   ])
   // nothing picked: the board used most recently
   const recent = mostRecentBoard(boards, boardUse)
@@ -32,6 +33,7 @@ export async function runImport(raw: string, kindHint: ImportKind, options: Impo
     types,
     blocks,
     imports,
+    fields,
     boards,
     target: options.target ?? (recent ? { id: recent.id } : undefined),
     decided: options.decided,
@@ -51,7 +53,7 @@ export async function runImport(raw: string, kindHint: ImportKind, options: Impo
 
 /** Step one of undo: what would be lost. Nothing is changed yet. */
 export async function prepareUndo(entry: ImportEntry): Promise<UndoPlan> {
-  const [imports, papers, blocks, comments, types, records, cards, boardItems, connectors, piles, discussionItems] =
+  const [imports, papers, blocks, comments, types, records, cards, boardItems, connectors, piles, discussionItems, fields] =
     await Promise.all([
       db.imports.toArray(),
       db.papers.toArray(),
@@ -64,11 +66,12 @@ export async function prepareUndo(entry: ImportEntry): Promise<UndoPlan> {
       db.connectors.toArray(),
       db.piles.toArray(),
       db.discussionItems.toArray(),
+      db.fields.toArray(),
     ])
   const keptPaperIds = new Set(discussionItems.filter((i) => !i.deleted && i.ref_type === 'paper').map((i) => i.ref_id))
   return planUndo(
     entry,
-    { imports, papers, blocks, comments, types, records, cards, boardItems, connectors, piles, keptPaperIds },
+    { imports, papers, blocks, comments, types, records, cards, boardItems, connectors, piles, fields, keptPaperIds },
     nowIso(),
   )
 }

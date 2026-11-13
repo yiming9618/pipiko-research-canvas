@@ -31,6 +31,7 @@ export function watchPointerDrag(e: Start, ref: PointerDrop['ref'], label: strin
   const startX = e.clientX
   const startY = e.clientY
   let ghost: HTMLElement | null = null
+  let over: HTMLElement | null = null
 
   const move = (ev: PointerEvent) => {
     if (ev.pointerId !== e.pointerId) return
@@ -50,6 +51,13 @@ export function watchPointerDrag(e: Start, ref: PointerDrop['ref'], label: strin
     }
     ev.preventDefault()
     ghost.style.transform = `translate(${ev.clientX + 12}px, ${ev.clientY + 12}px)`
+    // something that takes a drop (a field's heading) lights up under the pointer
+    const target = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>('[data-drop-target]') ?? null
+    if (target !== over) {
+      over?.classList.remove('is-over')
+      target?.classList.add('is-over')
+      over = target
+    }
   }
   const up = (ev: PointerEvent) => {
     if (ev.pointerId !== e.pointerId) return
@@ -70,6 +78,8 @@ export function watchPointerDrag(e: Start, ref: PointerDrop['ref'], label: strin
     ev.stopPropagation()
   }
   const stop = () => {
+    over?.classList.remove('is-over')
+    over = null
     ghost?.remove()
     ghost = null
     document.body.classList.remove('is-pointer-dragging')
