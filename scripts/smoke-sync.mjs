@@ -95,7 +95,7 @@ const synced = (page) => page.locator('#s-sync ~ .status-line', { hasText: '已�
 const phone = await device('phone', 390, 844, true)
 await phone.goto(`${url}#/settings`)
 await phone.getByRole('button', { name: '放入示例内容' }).click()
-await phone.locator('.import-msg', { hasText: '生成了 6 张卡片' }).waitFor()
+await phone.locator('.status-line', { hasText: '生成了 6 张卡片' }).waitFor()
 check('[phone] 没连接时说明令牌只存在这台设备', await phone.getByText('令牌只存在这台设备里').isVisible())
 await phone.screenshot({ path: `${out}/phone-sync-1-form.png`, fullPage: true })
 const small = await phone.evaluate(() =>

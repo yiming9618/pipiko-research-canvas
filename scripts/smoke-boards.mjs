@@ -335,7 +335,7 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
       msg = d.message()
       void d.accept()
     })
-    await page.getByRole('button', { name: '删除这块画板' }).click()
+    await page.getByRole('button', { name: '移到垃圾桶' }).click()
     await page.getByRole('heading', { name: '画板', level: 1 }).waitFor()
     await page.locator('.board-tile-main').first().waitFor()
     check(`${tag} 删除画板前确认，并说明会一起删掉什么`, msg.includes('2 张卡片') && msg.includes('论文库里的论文不受影响'), msg)

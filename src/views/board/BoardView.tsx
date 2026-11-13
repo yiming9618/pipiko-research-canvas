@@ -32,7 +32,8 @@ import { copyText } from '../../ui/clipboard'
 import { CopyExport } from '../../ui/CopyExport'
 import { useNotebook } from '../../store/notebook'
 import { POINTER_DROP, type PointerDrop } from '../../ui/pointerDrag'
-import { boardCounts, deleteBoard, renameBoard, touchBoard } from '../../store/boardStore'
+import { boardCounts, renameBoard, touchBoard } from '../../store/boardStore'
+import { loadTrashed, trashBoard } from '../../store/trashActions'
 import { db, localChangeListeners, todayLocal } from '../../store/db'
 import { DRAG_TYPE, readDrag } from '../../ui/drag'
 import { IconBack, IconCheck, IconEraser, IconImage, IconLink, IconMarker, IconPen, IconPlus, IconRedo, IconSelect, IconText, IconUndo } from '../../ui/icons'
@@ -106,7 +107,7 @@ interface Props {
 export function BoardView({ boardId, focus }: Props) {
   const narrow = useNarrow()
   const board = useLiveQuery(() => db.boards.get(boardId).then((b) => b ?? null), [boardId])
-  const boards = useLiveQuery(() => db.boards.filter((b) => !b.deleted).toArray())
+  const boards = useLiveQuery(() => db.boards.filter((b) => !b.deleted && !b.trashed_at).toArray())
 
   // ── what is arranged on this board ───────────────────────────────────
   const items = useLiveQuery(
@@ -125,7 +126,9 @@ export function BoardView({ boardId, focus }: Props) {
       ),
     [boardId],
   )
-  const papers = useLiveQuery(() => db.papers.filter((p) => !p.deleted).toArray())
+  // papers in the trash are not drawn (their cards on this board come back when they do)
+  const papers = useLiveQuery(() => db.papers.filter((p) => !p.deleted && !p.trashed_at).toArray())
+  const trashedPapers = useLiveQuery(async () => new Set((await db.papers.filter((p) => !p.deleted && !!p.trashed_at).primaryKeys()) as string[]))
   const piles = useLiveQuery(() => db.piles.filter((p) => !p.deleted).sortBy('created_at'))
   const assets = useLiveQuery(async () => {
     const ids = (items ?? []).filter((i) => i.ref_type === 'image').map((i) => i.ref_id)
@@ -143,10 +146,13 @@ export function BoardView({ boardId, focus }: Props) {
     const cards = allCards.filter((c) => homeBoardId(c) === boardId)
     const refCards = new Set((items ?? []).filter((i) => i.ref_type === 'card').map((i) => i.ref_id))
     const refCovers = new Set((items ?? []).filter((i) => i.ref_type === 'cover').map((i) => i.ref_id))
-    const guestCards = allCards.filter((c) => refCards.has(c.id) && homeBoardId(c) !== boardId)
+    const trash = await loadTrashed()
+    // cards from a board in the trash went with it: not shown here until it comes back
+    const guestCards = allCards.filter((c) => refCards.has(c.id) && homeBoardId(c) !== boardId && !trash.boards.has(homeBoardId(c)))
     const guestRecordIds = new Set([...guestCards.map((c) => c.record_id), ...refCovers])
-    const guestRecords = allRecords.filter((r) => guestRecordIds.has(r.id) && recordBoardId(r) !== boardId)
-    return { records, cards, guestCards, guestRecords }
+    const guestRecords = allRecords.filter((r) => guestRecordIds.has(r.id) && recordBoardId(r) !== boardId && !trash.boards.has(recordBoardId(r)))
+    const hidden = new Set([...allCards.filter((c) => trash.boards.has(homeBoardId(c))).map((c) => `card:${c.id}`), ...allRecords.filter((r) => trash.boards.has(recordBoardId(r))).map((r) => `cover:${r.id}`)])
+    return { records, cards, guestCards, guestRecords, hidden }
   }, [boardId, items])
   const records = source?.records
   const cards = source?.cards
@@ -400,6 +406,8 @@ export function BoardView({ boardId, focus }: Props) {
         })
       } else if (source) {
         // Pointers: each is drawn from its original, which lives somewhere else.
+        // things that went to the trash (a paper, or the board a card lives on) are out of sight until they come back
+        if (source.hidden.has(`${item.ref_type}:${item.ref_id}`) || (item.ref_type === 'paper' && trashedPapers?.has(item.ref_id))) continue
         if (item.ref_type === 'card') {
           const card = cardById.get(item.ref_id)
           if (card && homeBoardId(card) === boardId) continue // one of this board's own: drawn above, this row is its saved place
@@ -466,7 +474,7 @@ export function BoardView({ boardId, focus }: Props) {
     }
     // Untouched cards keep their order; anything moved is drawn above them, most recent on top.
     return out.sort((a, b) => (a.z ?? 0) - (b.z ?? 0))
-  }, [sortedRecords, papers, itemByRef, layout, cardsOf, manualCards, items, assets, typingKey, saveText, recordById, cardById, piles, source, boards, boardId, focus])
+  }, [sortedRecords, papers, trashedPapers, itemByRef, layout, cardsOf, manualCards, items, assets, typingKey, saveText, recordById, cardById, piles, source, boards, boardId, focus])
 
   const topZ = (items ?? []).reduce((max, i) => Math.max(max, i.z), 0) + 1
 
@@ -787,6 +795,22 @@ export function BoardView({ boardId, focus }: Props) {
 
   const back = board?.pile_id && piles?.some((p) => p.id === board.pile_id) ? `#/pile/${board.pile_id}` : '#/boards'
 
+  if (loaded && board && board.trashed_at && !board.deleted) {
+    return (
+      <div className="dayboard">
+        <header className="board-head">
+          <a className="crumb-link" href="#/boards">
+            <IconBack />
+            画板
+          </a>
+        </header>
+        <p className="empty board-empty">
+          这块画板在垃圾桶里。要用它，到 <a href="#/settings?section=trash">设置 → 垃圾桶</a> 里恢复，画板上的一切会原样回来。
+        </p>
+      </div>
+    )
+  }
+
   if (loaded && (!board || board.deleted)) {
     return (
       <div className="dayboard">
@@ -1027,15 +1051,15 @@ function BoardHead({ board, back, editing }: { board: Board; back: string; editi
             onClick={() => {
               void boardCounts(board.id).then(({ cards, other }) => {
                 const what = [cards > 0 ? `${cards} 张卡片` : '', other > 0 ? `${other} 样别的东西（文字、贴图、笔迹、论文卡片）` : ''].filter(Boolean).join('和')
-                if (window.confirm(`删除画板「${board.name}」？${what ? `上面的 ${what}会一起删除。` : '它是空的。'}论文库里的论文不受影响。`)) {
-                  void deleteBoard(board).then(() => {
+                if (window.confirm(`把画板「${board.name}」移到垃圾桶？${what ? `上面的 ${what}会一起移过去。` : '它是空的。'}论文库里的论文不受影响。以后可以在“设置 → 垃圾桶”里完整恢复，回到原来的堆。`)) {
+                  void trashBoard(board).then(() => {
                     window.location.hash = '#/boards'
                   })
                 }
               })
             }}
           >
-            删除这块画板
+            移到垃圾桶
           </button>
         </div>
       )}

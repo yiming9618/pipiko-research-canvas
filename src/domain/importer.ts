@@ -62,7 +62,7 @@ export interface ImportOutcome {
    * The Markdown names a board (`board:`) that does not exist. Nothing was stored:
    * the person chooses between making it and one of the closest existing boards.
    */
-  needsBoard?: { name: string; similar: { id: string; name: string }[] }
+  needsBoard?: { name: string; similar: { id: string; name: string }[]; inTrash?: boolean }
   /** The board a research import went onto. */
   board?: { id: string; name: string; created: boolean }
 }
@@ -72,10 +72,10 @@ export type BoardTarget = { id: string } | { newName: string }
 export const DEFAULT_BOARD_NAME = '未命名画板'
 
 /** Board names are compared without regard to case, spacing or punctuation. */
-export function findBoardByName(boards: Board[], name: string): Board | undefined {
+export function findBoardByName(boards: Board[], name: string, trashed = false): Board | undefined {
   const key = normalizeTitle(name)
   if (!key) return undefined
-  return boards.filter((b) => !b.deleted).sort((a, b) => (a.created_at < b.created_at ? -1 : 1)).find((b) => normalizeTitle(b.name) === key)
+  return boards.filter((b) => !b.deleted && !!b.trashed_at === trashed).sort((a, b) => (a.created_at < b.created_at ? -1 : 1)).find((b) => normalizeTitle(b.name) === key)
 }
 
 /** Small stable string hash (cyrb53), used to spot an identical paste. */
@@ -123,7 +123,8 @@ export function builtinTypes(): HighlightType[] {
 
 /** DOI match first; a paper without a DOI (or an incoming one without) matches by title. */
 export function findPaper(papers: Paper[], doi: string, title: string): Paper | undefined {
-  const live = papers.filter((p) => !p.deleted)
+  // papers in the trash are left alone: a paper imported again becomes a new, separate record
+  const live = papers.filter((p) => !p.deleted && !p.trashed_at)
   if (doi) {
     const byDoi = live.find((p) => p.doi === doi)
     if (byDoi) return byDoi
@@ -156,9 +157,18 @@ export function planImport(raw: string, ctx: ImportContext): ImportOutcome {
   if (parsed.kind === 'research' && parsed.board && !ctx.decided) {
     const named = findBoardByName(ctx.boards ?? [], parsed.board)
     if (named) target = { id: named.id }
-    else {
+    else if (findBoardByName(ctx.boards ?? [], parsed.board, true)) {
+      // the board it names is in the trash: not a place to import into, and it is not brought back
+      return {
+        stored: false,
+        message: `Markdown 里写的画板「${parsed.board}」在垃圾桶里，目前不能作为导入目标`,
+        notices: parsed.notices,
+        changes: {},
+        needsBoard: { name: parsed.board, similar: [], inTrash: true },
+      }
+    } else {
       const similar = (ctx.boards ?? [])
-        .filter((b) => !b.deleted)
+        .filter((b) => !b.deleted && !b.trashed_at)
         .map((b) => ({ b, score: titleSimilarity(b.name, parsed.board) }))
         .filter((x) => x.score >= 0.4)
         .sort((x, y) => y.score - x.score || (x.b.id < y.b.id ? -1 : 1))
@@ -207,7 +217,7 @@ function importResearch(
   target: BoardTarget | undefined,
 ): { changes: Changes; board: NonNullable<ImportOutcome['board']> } {
   // The board: an existing one, or a new one made now.
-  const existing = target && 'id' in target ? (ctx.boards ?? []).find((b) => b.id === target.id && !b.deleted) : undefined
+  const existing = target && 'id' in target ? (ctx.boards ?? []).find((b) => b.id === target.id && !b.deleted && !b.trashed_at) : undefined
   const made: Board | undefined = existing
     ? undefined
     : {
@@ -257,7 +267,7 @@ function importResearch(
   const mentioned: string[] = []
   const source = { date: parsed.date, record_id: record.id }
   for (const doi of [...new Set(parsed.paper_dois)]) {
-    const have = ctx.papers.find((p) => !p.deleted && p.doi === doi)
+    const have = ctx.papers.find((p) => !p.deleted && !p.trashed_at && p.doi === doi)
     if (!have) {
       const id = ctx.newId('paper')
       papers.push({
@@ -453,7 +463,7 @@ function importPaper(
   let similar: ImportOutcome['similar']
   if (!existing) {
     const candidates = ctx.papers
-      .filter((p) => !p.deleted && p.status === 'want' && p.title !== '' && !(parsed.doi && p.doi && p.doi !== parsed.doi))
+      .filter((p) => !p.deleted && !p.trashed_at && p.status === 'want' && p.title !== '' && !(parsed.doi && p.doi && p.doi !== parsed.doi))
       .map((p) => ({ p, score: titleSimilarity(p.title, parsed.title) }))
       .filter((c) => c.score >= SIMILAR_ENOUGH)
       .sort((a, b) => b.score - a.score || (a.p.id < b.p.id ? -1 : 1))

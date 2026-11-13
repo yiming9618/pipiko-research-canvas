@@ -17,7 +17,7 @@ interface Result {
   plain?: boolean
   similar?: { paper_id: string; want_id: string; want_title: string }
   /** The Markdown names a board that does not exist: waiting for the person to choose. */
-  needsBoard?: { name: string; similar: { id: string; name: string }[]; text: string }
+  needsBoard?: { name: string; similar: { id: string; name: string }[]; inTrash?: boolean; text: string }
   /** Where a research import went, to offer a way there. */
   board?: { id: string; name: string }
 }
@@ -212,7 +212,16 @@ export function PastePanel() {
             )}
           </div>
         )}
-        {result?.needsBoard && (
+        {result?.needsBoard?.inTrash && (
+          <TrashedBoardQuestion
+            name={result.needsBoard.name}
+            boards={boardList}
+            busy={busy}
+            onPick={(target) => answerBoard(target)}
+            onCancel={() => setResult(null)}
+          />
+        )}
+        {result?.needsBoard && !result.needsBoard.inTrash && (
           <div className="result is-question">
             <p className="result-text">还没有叫「{result.needsBoard.name}」的画板。要放到哪里？</p>
             <div className="result-choices">
@@ -257,6 +266,77 @@ export function PastePanel() {
       </div>
 
       {dialog}
+    </div>
+  )
+}
+
+/**
+ * The Markdown names a board that is in the trash. It is not imported into, and it is not
+ * brought back from here (only the trash itself does that): pick another board, make a new
+ * one, or leave it.
+ */
+function TrashedBoardQuestion({
+  name,
+  boards,
+  busy,
+  onPick,
+  onCancel,
+}: {
+  name: string
+  boards: { id: string; name: string }[]
+  busy: boolean
+  onPick: (target: BoardTarget) => void
+  onCancel: () => void
+}) {
+  const [other, setOther] = useState(boards[0]?.id ?? '')
+  const [making, setMaking] = useState(false)
+  const [newName, setNewName] = useState('')
+  return (
+    <div className="result is-question trashed-board">
+      <p className="result-text">可以放进其他画板、新建一块画板，或者先不导入。要恢复「{name}」，请到“设置 → 垃圾桶”。</p>
+      <div className="result-choices">
+        {boards.length > 0 && (
+          <>
+            <label>
+              <span className="sr-only">选择其他画板</span>
+              <select value={other} onChange={(e) => setOther(e.target.value)}>
+                {boards.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="button" className="btn" disabled={busy || !other} onClick={() => onPick({ id: other })}>
+              放进选中的画板
+            </button>
+          </>
+        )}
+        {making ? (
+          <form
+            className="new-named"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (newName.trim()) onPick({ newName: newName.trim() })
+            }}
+          >
+            <label>
+              <span className="sr-only">新画板的名字</span>
+              <input value={newName} autoFocus maxLength={40} placeholder="新画板的名字" onChange={(e) => setNewName(e.target.value)} />
+            </label>
+            <button type="submit" className="btn" disabled={busy || !newName.trim()}>
+              新建并放进去
+            </button>
+          </form>
+        ) : (
+          <button type="button" className="btn" disabled={busy} onClick={() => setMaking(true)}>
+            新建画板
+          </button>
+        )}
+        <button type="button" className="btn btn-quiet" onClick={onCancel}>
+          取消导入
+        </button>
+      </div>
     </div>
   )
 }

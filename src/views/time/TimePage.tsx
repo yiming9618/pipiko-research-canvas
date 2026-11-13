@@ -1,6 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect } from 'react'
+import { homeBoardId } from '../../domain/migrate'
 import { db } from '../../store/db'
+import { loadTrashed } from '../../store/trashActions'
 import { IconBack } from '../../ui/icons'
 import { TopNav } from '../../ui/TopNav'
 import { DayView } from './DayView'
@@ -16,11 +18,14 @@ export function TimePage({ param }: { param?: string }) {
 
   // Every day that has something: a card with that date, or a paper read on it.
   const days = useLiveQuery(async () => {
-    const [cards, reads] = await Promise.all([
+    const [cards, reads, trash] = await Promise.all([
       db.cards.filter((c) => !c.deleted).toArray(),
       db.imports.filter((e) => e.kind === 'paper' && !e.undone && !e.deleted).toArray(),
+      loadTrashed(),
     ])
-    return [...new Set([...cards.map((c) => c.date), ...reads.map((e) => e.date)])].sort()
+    const shownCards = cards.filter((c) => !trash.boards.has(homeBoardId(c)))
+    const shownReads = reads.filter((e) => !e.paper_id || !trash.papers.has(e.paper_id))
+    return [...new Set([...shownCards.map((c) => c.date), ...shownReads.map((e) => e.date)])].sort()
   })
 
   // "#/time" opens the most recent month that has something.

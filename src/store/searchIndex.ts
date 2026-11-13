@@ -29,6 +29,18 @@ export async function loadSearchData(): Promise<SearchData> {
     db.fields.filter((f) => !f.deleted).toArray(),
   ])
 
+  // the trash is not searched: papers in it (with their highlights and notes), boards in it (with their cards)
+  {
+    const goneB = new Set(boards.filter((b) => b.trashed_at).map((b) => b.id))
+    const goneP = new Set(papers.filter((p) => p.trashed_at).map((p) => p.id))
+    const keep = <T,>(rows: T[], ok: (r: T) => boolean) => rows.splice(0, rows.length, ...rows.filter(ok))
+    keep(papers, (p) => !goneP.has(p.id))
+    keep(blocks, (b) => !goneP.has(b.paper_id))
+    keep(comments, (c) => !goneP.has(c.paper_id))
+    keep(records, (r) => !goneB.has(recordBoardId(r)))
+    keep(cards, (c) => !goneB.has(homeBoardId(c)))
+    keep(boards, (b) => !goneB.has(b.id))
+  }
   const importDate = new Map(imports.map((e) => [e.id, e.date]))
   const typeById = new Map(types.map((t) => [t.id, t]))
   const paperById = new Map(papers.map((p) => [p.id, p]))

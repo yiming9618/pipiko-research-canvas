@@ -4,11 +4,13 @@ import { boardHref } from '../../domain/boards'
 import { shortDate } from '../../domain/importer'
 import { recordBoardId } from '../../domain/migrate'
 import { paperParts } from '../../domain/exportPaper'
+import { showRestoredMark } from '../../domain/trash'
+import { trashPaper } from '../../store/trashActions'
 import type { HighlightType, Paper, PaperBlock } from '../../domain/types'
 import { db } from '../../store/db'
 import { addBlock, deleteBlock, saveBlockText, savePaperField } from '../../store/paperActions'
 import { EditableText } from '../../ui/EditableText'
-import { IconBack, IconPlus } from '../../ui/icons'
+import { IconBack, IconPlus, IconTrash } from '../../ui/icons'
 import { AddToDiscussion } from '../discussions/AddToDiscussion'
 import { CommentRail } from './CommentRail'
 import { EditPaperForm } from './PaperForm'
@@ -33,6 +35,7 @@ export function PaperPage({ id }: { id: string }) {
     return () => window.removeEventListener('pointerdown', onDown)
   }, [selected])
   const paper = useLiveQuery(() => db.papers.get(id), [id])
+  const libraryPapers = useLiveQuery(() => db.papers.filter((p) => !p.deleted && !p.trashed_at).toArray())
   const blocks = useLiveQuery(
     () => db.blocks.where('paper_id').equals(id).filter((b) => !b.deleted).sortBy('order'),
     [id],
@@ -46,7 +49,7 @@ export function PaperPage({ id }: { id: string }) {
     const p = await db.papers.get(id)
     if (!p?.doi) return []
     const records = await db.records.filter((r) => !r.deleted && r.paper_dois.includes(p.doi)).toArray()
-    const boards = await db.boards.toArray()
+    const boards = (await db.boards.toArray()).filter((b) => !b.trashed_at)
     // the boards those records are on, each once
     const ids = [...new Set(records.map(recordBoardId))]
     return ids
@@ -64,8 +67,19 @@ export function PaperPage({ id }: { id: string }) {
       </div>
     )
   }
+  if (paper.trashed_at) {
+    return (
+      <div className="paper" ref={pageRef}>
+        <BackLink />
+        <p className="empty">
+          这篇论文在垃圾桶里。要用它，到 <a href="#/settings?section=trash">设置 → 垃圾桶</a> 里恢复。
+        </p>
+      </div>
+    )
+  }
 
   const typeById = new Map((types ?? []).map((t) => [t.id, t]))
+  const restoredMark = !!paper.restored_at && !!libraryPapers && showRestoredMark(paper, libraryPapers)
   const highlights = (blocks ?? []).filter((b) => b.type_id !== null)
   // short names for the cards ("研究方法 2" when a type has several), shared with the export
   const { cardName } = paperParts({ paper, blocks: blocks ?? [], types: types ?? [], comments: [], fields: [] })
@@ -83,7 +97,11 @@ export function PaperPage({ id }: { id: string }) {
       <article className="paper-main">
         <BackLink />
         <header className="paper-head">
-          <h1>{paper.title || paper.doi || '（没有标题）'}</h1>
+          <h1>
+            {restoredMark && <span className="restored-mark">【恢复】</span>}
+            {paper.title || paper.doi || '（没有标题）'}
+          </h1>
+          {restoredMark && <p className="paper-meta">这一份是从垃圾桶恢复的；论文库里还有同一篇的另一份，两份各自独立。</p>}
           {meta.length > 0 && <p className="paper-meta">{meta.join(' · ')}</p>}
           <p className="paper-meta">
             {paper.doi && (
@@ -108,6 +126,20 @@ export function PaperPage({ id }: { id: string }) {
                 编辑信息
               </button>
               <PaperExport paper={paper} />
+              <button
+                type="button"
+                className="btn btn-quiet"
+                onClick={() => {
+                  if (window.confirm(`把「${paper.title || '这篇论文'}」移到垃圾桶？它的重点、我的理解，以及画板上的这张论文卡片会一起移过去；研究卡片不受影响。以后可以在“设置 → 垃圾桶”里完整恢复。`)) {
+                    void trashPaper(paper).then(() => {
+                      window.location.hash = '#/library'
+                    })
+                  }
+                }}
+              >
+                <IconTrash />
+                删除
+              </button>
             </div>
           )}
         </header>

@@ -8,6 +8,7 @@ import { AddPaperForm, EditPaperForm } from './PaperForm'
 import { AddToDiscussion } from '../discussions/AddToDiscussion'
 import { POINTER_DROP, watchPointerDrag, type PointerDrop } from '../../ui/pointerDrag'
 import { fieldOfPaper } from '../../domain/migrate'
+import { showRestoredMark } from '../../domain/trash'
 import { setPaperField } from '../../store/fieldActions'
 import { toast } from '../../ui/toast'
 import { boardHref } from '../../domain/boards'
@@ -42,7 +43,7 @@ interface ListProps {
 }
 
 export function LibraryList({ activeId, onDragOut, onCollapse }: ListProps) {
-  const papers = useLiveQuery(() => db.papers.filter((p) => !p.deleted).toArray())
+  const papers = useLiveQuery(() => db.papers.filter((p) => !p.deleted && !p.trashed_at).toArray())
   const blocks = useLiveQuery(() => db.blocks.filter((b) => !b.deleted && b.type_id !== null).toArray())
   const types = useLiveQuery(() => db.types.filter((t) => !t.deleted).toArray())
   const fields = useLiveQuery(() => db.fields.toArray())
@@ -246,7 +247,10 @@ export function LibraryList({ activeId, onDragOut, onCollapse }: ListProps) {
                             <span className="row-grip" data-grip aria-hidden="true">
                               <IconGrip />
                             </span>
-                            <span className="paper-row-title">{p.title || '（没有标题）'}</span>
+                            <span className="paper-row-title">
+                              {showRestoredMark(p, papers ?? []) && <span className="restored-mark">【恢复】</span>}
+                              {p.title || '（没有标题）'}
+                            </span>
                             {meta.length > 0 && <span className="paper-row-meta">{meta.join(' · ')}</span>}
                             {dots.length > 0 && (
                               <span className="dots" role="img" aria-label={`重点：${dots.map((t) => t.name).join('、')}`}>

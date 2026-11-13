@@ -263,6 +263,8 @@ for (const size of sizes) {
 
   // ── rename + recolour the unknown type (it is still in the list even though its block was deleted)
   await page.goto(`${url}#/settings`)
+  check(`${tag} 设置页：“重点类型”默认折叠`, (await page.getByRole('button', { name: '重点类型' }).getAttribute('aria-expanded')) === 'false')
+  await page.getByRole('button', { name: '重点类型' }).click()
   const row = page.locator('.type-row:not(.field-row)', { has: page.locator('input') })
   await row.locator('input').fill('研究伦理')
   await row.locator('input').blur()

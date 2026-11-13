@@ -219,3 +219,9 @@ export const IconFold = () => (
     <path d="M9 5v14M15.500 10l-2 2 2 2" />
   </Icon>
 )
+
+export const IconTrash = () => (
+  <Icon>
+    <path d="M4 7h16M9 7V4.500h6V7M6.500 7l1 12.500h9l1-12.500M10 11v5M14 11v5" />
+  </Icon>
+)

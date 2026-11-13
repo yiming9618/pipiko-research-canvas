@@ -1,7 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useMemo, useRef } from 'react'
 import { KIND_COLOR } from '../../domain/colors'
-import { homeBoardId } from '../../domain/migrate'
+import { homeBoardId, recordBoardId } from '../../domain/migrate'
+import { loadTrashed } from '../../store/trashActions'
 import { neighbours, shownMonths } from '../../domain/timeline'
 import type { Card, ResearchRecord } from '../../domain/types'
 import { db, todayLocal } from '../../store/db'
@@ -21,11 +22,17 @@ export function MonthView({ ym, days }: { ym: string; days: string[] }) {
   const range = [`${ym}-01`, `${ym}-31`] as const
 
   const records = useLiveQuery(
-    () => db.records.where('date').between(range[0], range[1], true, true).filter((r) => !r.deleted).toArray(),
+    async () => {
+      const trash = await loadTrashed()
+      return db.records.where('date').between(range[0], range[1], true, true).filter((r) => !r.deleted && !trash.boards.has(recordBoardId(r))).toArray()
+    },
     [ym],
   )
   const cards = useLiveQuery(
-    () => db.cards.where('date').between(range[0], range[1], true, true).filter((c) => !c.deleted).toArray(),
+    async () => {
+      const trash = await loadTrashed()
+      return db.cards.where('date').between(range[0], range[1], true, true).filter((c) => !c.deleted && !trash.boards.has(homeBoardId(c))).toArray()
+    },
     [ym],
   )
   const reads = useLiveQuery(async () => {
@@ -33,10 +40,10 @@ export function MonthView({ ym, days }: { ym: string; days: string[] }) {
       .filter((e) => e.kind === 'paper' && !e.undone && !e.deleted && e.date.startsWith(ym))
       .toArray()
     const papers = await db.papers.bulkGet(imports.map((e) => e.paper_id ?? ''))
-    return imports.map((e, i) => ({ date: e.date, title: papers[i]?.title ?? '' })).filter((r) => r.title)
+    return imports.map((e, i) => ({ date: e.date, title: papers[i] && !papers[i]!.trashed_at && !papers[i]!.deleted ? papers[i]!.title : '' })).filter((r) => r.title)
   }, [ym])
   const order = useLiveQuery(async () => new Map((await db.imports.toArray()).map((e) => [e.id, e.imported_at])))
-  const boardNames = useLiveQuery(async () => new Map((await db.boards.filter((b) => !b.deleted).toArray()).map((b) => [b.id, b.name])))
+  const boardNames = useLiveQuery(async () => new Map((await db.boards.filter((b) => !b.deleted && !b.trashed_at).toArray()).map((b) => [b.id, b.name])))
 
   const shown = useMemo(() => {
     const map = new Map<string, Day>()

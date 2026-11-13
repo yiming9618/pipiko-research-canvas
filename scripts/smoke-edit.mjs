@@ -71,7 +71,7 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   // content: two sample papers (and a board we will not use), then a fresh board to work on
   await page.goto(`${url}#/settings`)
   await page.getByRole('button', { name: '放入示例内容' }).click()
-  await page.locator('.import-msg', { hasText: '生成了 6 张卡片' }).waitFor()
+  await page.locator('.status-line', { hasText: '生成了 6 张卡片' }).waitFor()
   await page.goto(`${url}#/boards`)
   await page.getByRole('button', { name: '新建画板' }).click()
   await page.getByLabel(/画板的名字/).fill('编辑测试')

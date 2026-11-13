@@ -4,6 +4,7 @@
 
 import { useLiveQuery } from 'dexie-react-hooks'
 import type { NotebookData } from '../domain/exportMarkdown'
+import { withoutTrash } from '../domain/trash'
 import { db } from './db'
 
 export async function loadNotebook(): Promise<NotebookData> {
@@ -20,7 +21,7 @@ export async function loadNotebook(): Promise<NotebookData> {
     db.boards.toArray(),
     db.imports.toArray(),
   ])
-  return { papers, blocks, types, records, cards, boardItems, connectors, strokes, piles, boards, imports }
+  return withoutTrash({ papers, blocks, types, records, cards, boardItems, connectors, strokes, piles, boards, imports })
 }
 
 export function useNotebook(): NotebookData | undefined {

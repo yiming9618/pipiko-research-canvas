@@ -41,7 +41,7 @@ export function DayView({ date, days }: { date: string; days: string[] }) {
     const readToday = imports.filter((e) => e.date === date && e.paper_id)
     const papers = await db.papers.bulkGet([...new Set(readToday.map((e) => e.paper_id!))])
     const reads = papers
-      .filter((p) => !!p && !p.deleted)
+      .filter((p) => !!p && !p.deleted && !p.trashed_at)
       .map((p) => ({ paper: p!, again: imports.some((o) => o.paper_id === p!.id && o.date < date) }))
     return { cards, boards, items, reads }
   }, [date])
@@ -62,7 +62,7 @@ export function DayView({ date, days }: { date: string; days: string[] }) {
   // cards grouped by the board they are on, boards in order of name
   const groups = new Map<string, Card[]>()
   for (const c of data?.cards ?? []) groups.set(homeBoardId(c), [...(groups.get(homeBoardId(c)) ?? []), c])
-  const boardName = (id: string) => data?.boards.find((b) => b.id === id && !b.deleted)?.name
+  const boardName = (id: string) => data?.boards.find((b) => b.id === id && !b.deleted && !b.trashed_at)?.name
   const ordered = [...groups.entries()]
     .filter(([id]) => boardName(id) !== undefined)
     .sort(([a], [b]) => boardName(a)!.localeCompare(boardName(b)!, 'zh'))

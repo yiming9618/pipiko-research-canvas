@@ -1,8 +1,9 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { shortDate } from '../../domain/importer'
 import type { Field, HighlightType, ImportEntry } from '../../domain/types'
-import { fieldOfPaper } from '../../domain/migrate'
+import { fieldOfPaper, homeBoardId } from '../../domain/migrate'
+import { restoreBoard, restorePaper } from '../../store/trashActions'
 import { createField, deleteField, renameField } from '../../store/fieldActions'
 import { downloadJson, exportAll, importBackup, parseBackup } from '../../store/backup'
 import { db, todayLocal } from '../../store/db'
@@ -10,7 +11,7 @@ import { sampleImports } from '../../dev/samples'
 import { runImport } from '../../store/actions'
 import { saveType } from '../../store/paperActions'
 import { backupBeforeBoards, currentBoardCheck, deleteBackupBeforeBoards, ensureBoards, lastMigrationReport } from '../../store/migration'
-import { IconClose, IconDownload, IconUndo, IconUpload } from '../../ui/icons'
+import { IconChevron, IconClose, IconDownload, IconUndo, IconUpload } from '../../ui/icons'
 import { TopNav } from '../../ui/TopNav'
 import { useUndo } from '../../ui/useUndo'
 import { SyncSection } from './SyncSection'
@@ -29,11 +30,30 @@ const COLORS: [string, string][] = [
 ]
 
 /** The preset types are fixed; types that came in from Markdown can be renamed and recoloured. */
+/** A settings section whose body can be folded away. Closed when the page opens; nothing is hidden from the data. */
+function Fold({ id, title, count, open: startOpen = false, children }: { id: string; title: string; count?: number; open?: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(startOpen)
+  useEffect(() => {
+    if (startOpen) setOpen(true)
+  }, [startOpen])
+  return (
+    <section className="section fold" aria-labelledby={id}>
+      <h2 id={id}>
+        <button type="button" className="group-head fold-head" aria-expanded={open} onClick={() => setOpen(!open)}>
+          <span>{title}</span>
+          {count !== undefined && <span className="group-count">{count}</span>}
+          <IconChevron />
+        </button>
+      </h2>
+      {open && <div className="fold-body">{children}</div>}
+    </section>
+  )
+}
+
 function TypeEditor() {
   const types = useLiveQuery(() => db.types.filter((t) => !t.deleted).sortBy('order'))
   return (
-    <section className="section" aria-labelledby="s-types">
-      <h2 id="s-types">重点类型</h2>
+    <Fold id="s-types" title="重点类型">
       <p className="section-note">预设的 8 种是固定的。导入时新出现的类型可以在这里改名、改颜色，已有的区块会一起更新。</p>
       <ul className="type-list">
         {types?.map((t: HighlightType) => (
@@ -73,14 +93,14 @@ function TypeEditor() {
           </li>
         ))}
       </ul>
-    </section>
+    </Fold>
   )
 }
 
 /** Fields (领域): make, rename, delete. A paper belongs to at most one. */
 function FieldEditor({ focus }: { focus: boolean }) {
   const fields = useLiveQuery(() => db.fields.filter((f) => !f.deleted).toArray())
-  const papers = useLiveQuery(() => db.papers.filter((p) => !p.deleted && p.status === 'read').toArray())
+  const papers = useLiveQuery(() => db.papers.filter((p) => !p.deleted && !p.trashed_at && p.status === 'read').toArray())
   const [name, setName] = useState('')
   const [note, setNote] = useState('')
   const ref = useRef<HTMLElement>(null)
@@ -160,6 +180,87 @@ function FieldEditor({ focus }: { focus: boolean }) {
         {note}
       </p>
     </section>
+  )
+}
+
+/**
+ * The trash: papers and boards moved out of the library and the boards, whole, with everything
+ * that hangs off them. "恢复" moves one back to where it was. Nothing here is ever destroyed.
+ */
+function Trash({ focus }: { focus: boolean }) {
+  const data = useLiveQuery(async () => {
+    const [boards, papers, cards, comments, piles] = await Promise.all([
+      db.boards.filter((b) => !b.deleted && !!b.trashed_at).toArray(),
+      db.papers.filter((p) => !p.deleted && !!p.trashed_at).toArray(),
+      db.cards.filter((c) => !c.deleted).toArray(),
+      db.comments.filter((c) => !c.deleted).toArray(),
+      db.piles.filter((p) => !p.deleted).toArray(),
+    ])
+    const newest = <T extends { trashed_at?: string }>(a: T, b: T) => ((a.trashed_at ?? '') < (b.trashed_at ?? '') ? 1 : -1)
+    return { boards: boards.sort(newest), papers: papers.sort(newest), cards, comments, piles }
+  })
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (focus && data) ref.current?.scrollIntoView({ block: 'start' })
+  }, [focus, data !== undefined])
+  const count = (data?.boards.length ?? 0) + (data?.papers.length ?? 0)
+  const day = (iso?: string) => (iso ? shortDate(new Date(iso).toLocaleDateString('sv-SE')) : '')
+
+  return (
+    <div ref={ref}>
+      <Fold id="s-trash" title="垃圾桶" count={count} open={focus}>
+        <p className="section-note">删除的论文和画板在这里，连同它们的全部内容。恢复会把它们原样放回原来的位置。这里不会自动清理，也不能永久删除。</p>
+        {data && count === 0 && <p className="empty">垃圾桶是空的。</p>}
+        {data && data.boards.length > 0 && (
+          <>
+            <h3 className="trash-group">画板</h3>
+            <ul className="trash-list">
+              {data.boards.map((b) => {
+                const n = data.cards.filter((c) => homeBoardId(c) === b.id).length
+                const pile = b.pile_id ? data.piles.find((p) => p.id === b.pile_id) : undefined
+                return (
+                  <li key={b.id} className="trash-item">
+                    <span className="trash-text">
+                      <span className="trash-name">{b.name}</span>
+                      <span className="trash-meta">
+                        {n} 张卡片{pile ? ` · 原在堆「${pile.name}」` : ''} · {day(b.trashed_at)} 移入
+                      </span>
+                    </span>
+                    <button type="button" className="btn" aria-label={`恢复画板：${b.name}`} onClick={() => void restoreBoard(b)}>
+                      恢复
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </>
+        )}
+        {data && data.papers.length > 0 && (
+          <>
+            <h3 className="trash-group">论文</h3>
+            <ul className="trash-list">
+              {data.papers.map((p) => {
+                const n = data.comments.filter((c) => c.paper_id === p.id).length
+                return (
+                  <li key={p.id} className="trash-item">
+                    <span className="trash-text">
+                      <span className="trash-name">{p.title || p.doi || '（没有标题）'}</span>
+                      <span className="trash-meta">
+                        {p.status === 'want' ? '想看' : '已读'}
+                        {n > 0 ? ` · ${n} 条理解` : ''} · {day(p.trashed_at)} 移入
+                      </span>
+                    </span>
+                    <button type="button" className="btn" aria-label={`恢复论文：${p.title || p.doi}`} onClick={() => void restorePaper(p)}>
+                      恢复
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </>
+        )}
+      </Fold>
+    </div>
   )
 }
 
@@ -281,14 +382,14 @@ export function Settings({ section }: { section?: string }) {
   }
 
   return (
-    <main className="page">
-      <TopNav current="settings" />
+    <div className="page-shell">
+<TopNav current="settings" />
+<main className="page">
       <header className="page-head">
         <h1>设置</h1>
       </header>
 
-      <section className="section" aria-labelledby="s-imports">
-        <h2 id="s-imports">最近导入</h2>
+      <Fold id="s-imports" title="最近导入">
         {imports && imports.length === 0 && <p className="empty">还没有导入过内容。</p>}
         <ul className="import-list">
           {imports?.map((e: ImportEntry) => (
@@ -320,11 +421,13 @@ export function Settings({ section }: { section?: string }) {
             </li>
           ))}
         </ul>
-      </section>
+      </Fold>
 
       <TypeEditor />
 
       <FieldEditor focus={section === 'fields'} />
+
+      <Trash focus={section === 'trash'} />
 
       {import.meta.env.DEV && <Samples />}
 
@@ -362,5 +465,6 @@ export function Settings({ section }: { section?: string }) {
 
       {dialog}
     </main>
+</div>
   )
 }

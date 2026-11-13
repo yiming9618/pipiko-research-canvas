@@ -89,6 +89,10 @@ export interface Paper extends Synced {
   lookup?: 'pending' | 'done' | 'failed'
   /** Set once the person edits the entry's details by hand (matters for AI-mentioned entries on undo). */
   touched?: boolean
+  /** In the trash since then. Its highlights and notes go with it (they hang off the paper). Absent = in the library. */
+  trashed_at?: ISODateTime
+  /** When it was last brought back from the trash (to mark it when another copy of the same paper exists). */
+  restored_at?: ISODateTime
 }
 
 /** A highlight block (重点区块) or an unrecognised section of a paper. */
@@ -188,6 +192,11 @@ export interface Board extends Synced {
   created_at: ISODateTime
   /** The pile (folder) it is in, if any. A board is in at most one. */
   pile_id?: string
+  /**
+   * In the trash since then. Everything on it (cards, records, pictures, ink, lines, positions)
+   * goes with it, untouched, and comes back with it. Absent = in use.
+   */
+  trashed_at?: ISODateTime
 }
 
 /**

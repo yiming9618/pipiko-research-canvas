@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import type { Paper } from '../../domain/types'
-import { addPaper, removeWant, savePaperInfo } from '../../store/paperActions'
+import { addPaper, savePaperInfo } from '../../store/paperActions'
+import { trashPaper } from '../../store/trashActions'
 
 const plain = { autoCapitalize: 'off', autoCorrect: 'off', spellCheck: false } as const
 
@@ -141,10 +142,10 @@ export function EditPaperForm({ paper, full, onDone }: { paper: Paper; full?: bo
             type="button"
             className="btn btn-quiet form-remove"
             onClick={() => {
-              if (window.confirm(`从"想看"里去掉「${paper.title || paper.doi || paper.url}」？`)) void removeWant(paper).then(onDone)
+              if (window.confirm(`把「${paper.title || paper.doi || paper.url}」移到垃圾桶？以后可以在“设置 → 垃圾桶”里恢复。`)) void trashPaper(paper).then(onDone)
             }}
           >
-            从想看里去掉
+            移到垃圾桶
           </button>
         )}
       </div>

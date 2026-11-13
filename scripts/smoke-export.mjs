@@ -35,7 +35,7 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
 
   await page.goto(`${url}#/settings`)
   await page.getByRole('button', { name: '放入示例内容' }).click()
-  await page.locator('.import-msg', { hasText: '生成了 6 张卡片' }).waitFor()
+  await page.locator('.status-line', { hasText: '生成了 6 张卡片' }).waitFor()
   // two more boards, in one pile
   await page.goto(url)
   for (const [md, board] of [[research('研究的记录', '霉菌研究', '研究里的问题'), '霉菌研究'], [research('实验的记录', '霉菌实验记录', '实验里的问题'), '霉菌实验记录']]) {

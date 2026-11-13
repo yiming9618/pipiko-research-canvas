@@ -38,7 +38,7 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
 
   await page.goto(`${url}#/settings`)
   await page.getByRole('button', { name: '放入示例内容' }).click()
-  await page.locator('.import-msg', { hasText: '生成了 6 张卡片' }).waitFor()
+  await page.locator('.status-line', { hasText: '生成了 6 张卡片' }).waitFor()
 
   // ── the search control is on every page
   const pages = ['#/', '#/boards', '#/time', `#/time/${today.slice(0, 4)}`, '#/library', '#/settings']

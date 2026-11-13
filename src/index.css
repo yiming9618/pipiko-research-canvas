@@ -4400,3 +4400,82 @@ body.is-pointer-dragging {
 .tile-board-more {
   color: var(--text-soft);
 }
+
+/* ── the nav stays put: on pages with a centred column it sits outside that column ── */
+
+.page-shell > .page {
+  padding-top: 8px;
+}
+
+/* ── settings: folded sections, the trash ────────────── */
+
+.fold > h2 {
+  margin: 0;
+}
+
+.fold-head {
+  font-size: 18px;
+  font-weight: 500;
+  padding: 0 4px 0 0;
+  border-bottom-color: var(--line-soft);
+}
+
+.fold-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 14px;
+}
+
+.trash-group {
+  margin: 4px 0 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.trash-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.trash-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.trash-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.trash-name {
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.trash-meta {
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.restored-mark {
+  margin-right: 4px;
+  color: var(--accent-deep);
+  font-weight: 700;
+}
+
+.trashed-board .result-choices {
+  align-items: center;
+}
+
+.trashed-board select {
+  min-height: var(--tap);
+  max-width: 220px;
+}

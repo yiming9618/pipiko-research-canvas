@@ -78,13 +78,18 @@ function authorMatches(cited: string, paper: Paper): boolean {
 }
 
 export function matchCitation(c: Citation, candidates: Paper[]): Paper | null {
-  const hits = candidates.filter((p) => !p.deleted && p.year === c.year && authorMatches(c.author, p))
-  return hits.length === 1 ? hits[0] : null
+  const hits = candidates.filter((p) => !p.deleted && !p.trashed_at && p.year === c.year && authorMatches(c.author, p))
+  if (hits.length === 1) return hits[0]
+  // Two copies of one paper (one restored from the trash): link to the copy that was not restored.
+  // Different papers that happen to match stay unlinked, as before.
+  const sameDoi = hits.length > 1 && hits.every((p) => p.doi === hits[0].doi)
+  const kept = sameDoi ? hits.filter((p) => !p.restored_at) : []
+  return kept.length === 1 ? kept[0] : null
 }
 
 /** Papers a record declared in its `papers:` field that exist in the library. */
 export function candidatesFor(dois: string[], papers: Paper[]): Paper[] {
-  return papers.filter((p) => !p.deleted && p.doi !== '' && dois.includes(p.doi))
+  return papers.filter((p) => !p.deleted && !p.trashed_at && p.doi !== '' && dois.includes(p.doi))
 }
 
 /** Rewrites matched citations as Markdown links `[…](#cite:<paper id>)`. Unmatched text is untouched. */

@@ -5,7 +5,8 @@ import type { Board, BoardItem, BoardUse, Card, Connector, Pile, ResearchRecord,
 
 export type BoardSort = 'created' | 'used'
 
-const live = <T extends { deleted?: boolean }>(rows: T[]) => rows.filter((r) => !r.deleted)
+// boards in the trash are not listed (their contents still count as theirs: see contentsOf)
+const live = <T extends { deleted?: boolean; trashed_at?: string }>(rows: T[]) => rows.filter((r) => !r.deleted && !r.trashed_at)
 
 /** When each board was last opened or edited; a board never used counts from its creation. */
 export function lastUsed(board: Board, use: BoardUse[]): string {

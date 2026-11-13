@@ -132,6 +132,9 @@ for (const size of sizes) {
   // settings
   await page.goto(`${url}#/settings`)
   await page.getByRole('heading', { name: '最近导入' }).waitFor()
+  // 最近导入 is folded when the page opens
+  check(`[${size.name}] 设置页：“最近导入”默认折叠`, (await page.getByRole('button', { name: '最近导入' }).getAttribute('aria-expanded')) === 'false')
+  await page.getByRole('button', { name: '最近导入' }).click()
   await page.getByText('已撤销').first().waitFor()
   await page.getByRole('button', { name: '查看原始 Markdown' }).first().click()
   await page.locator('.raw').waitFor()
@@ -147,6 +150,8 @@ for (const size of sizes) {
   await download.saveAs(file)
   await page.evaluate(() => indexedDB.deleteDatabase('research-notebook'))
   await page.reload()
+  // 最近导入 is folded when the page opens: open it to see the list come back
+  await page.getByRole('button', { name: '最近导入' }).click()
   await page.getByText('还没有导入过内容').waitFor()
   await page.locator('input[type=file]').setInputFiles(file)
   await page.getByText(/已导入：补上或更新了/).waitFor()

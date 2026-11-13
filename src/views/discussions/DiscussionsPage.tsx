@@ -3,6 +3,7 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { activeBoxes, archivedBoxes, itemsOf } from '../../domain/discussions'
 import { buildExport } from '../../domain/exportMarkdown'
 import { boardHref } from '../../domain/boards'
+import { withoutTrash } from '../../domain/trash'
 import { shortDate } from '../../domain/importer'
 import { homeBoardId } from '../../domain/migrate'
 import type { Discussion, DiscussionItem } from '../../domain/types'
@@ -46,8 +47,9 @@ export function DiscussionsPage() {
   }
 
   return (
-    <main className="page">
-      <TopNav current="discussions" />
+    <div className="page-shell">
+<TopNav current="discussions" />
+<main className="page">
       <header className="page-head">
         <h1>讨论框</h1>
       </header>
@@ -106,6 +108,7 @@ export function DiscussionsPage() {
         </section>
       )}
     </main>
+</div>
   )
 }
 
@@ -161,25 +164,31 @@ export function DiscussionPage({ id }: { id: string }) {
       db.imports.toArray(),
       db.boards.toArray(),
     ])
-    return { box: box ?? null, items: itemsOf(id, items), papers, blocks, types, records, cards, boardItems, connectors, strokes, piles, imports, boards }
+    // things in the trash drop out of the box until they come back
+    return { box: box ?? null, items: itemsOf(id, items), ...withoutTrash({ papers, blocks, types, records, cards, boardItems, connectors, strokes, piles, imports, boards }) }
   }, [id])
   const [exported, setExported] = useState<'ok' | 'manual' | null>(null)
 
   // Ready before the button is pressed: copying has to happen in the same tap on iPad and iPhone.
   const markdown = useMemo(() => (data?.box ? buildExport({ ...data, box: data.box }) : ''), [data])
 
-  if (!data) return <main className="page"><TopNav current="discussions" /></main>
+  if (!data) return <div className="page-shell">
+<TopNav current="discussions" />
+<main className="page"></main>
+</div>
   const box = data.box
   if (!box || box.deleted) {
     return (
-      <main className="page">
-        <TopNav current="discussions" />
+      <div className="page-shell">
+<TopNav current="discussions" />
+<main className="page">
         <a className="crumb-link back-link" href="#/discussions">
           <IconBack />
           讨论框
         </a>
         <p className="empty">找不到这个讨论框，可能已经删掉了。</p>
       </main>
+</div>
     )
   }
 
@@ -214,8 +223,9 @@ export function DiscussionPage({ id }: { id: string }) {
   }
 
   return (
-    <main className="page">
-      <TopNav current="discussions" />
+    <div className="page-shell">
+<TopNav current="discussions" />
+<main className="page">
       <header className="page-head box-head">
         <a className="crumb-link" href="#/discussions" aria-label="回到讨论框列表">
           <IconBack />
@@ -311,5 +321,6 @@ export function DiscussionPage({ id }: { id: string }) {
         </div>
       </section>
     </main>
+</div>
   )
 }

@@ -1,7 +1,9 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useMemo, useRef } from 'react'
 import { neighbours, shownMonths, shownYears } from '../../domain/timeline'
+import { recordBoardId } from '../../domain/migrate'
 import { db } from '../../store/db'
+import { loadTrashed } from '../../store/trashActions'
 import { Crumb } from './Crumb'
 import { rememberOrigin, usePinchNav, useStageAnimation } from './zoom'
 
@@ -10,7 +12,10 @@ const MAX_TITLES = 3
 /** A year: only its months that have something. Every tile opens that month. */
 export function YearView({ year, days }: { year: string; days: string[] }) {
   const records = useLiveQuery(
-    () => db.records.where('date').between(`${year}-01-01`, `${year}-12-31`, true, true).filter((r) => !r.deleted).toArray(),
+    async () => {
+      const trash = await loadTrashed()
+      return db.records.where('date').between(`${year}-01-01`, `${year}-12-31`, true, true).filter((r) => !r.deleted && !trash.boards.has(recordBoardId(r))).toArray()
+    },
     [year],
   )
 

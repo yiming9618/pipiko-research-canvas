@@ -163,8 +163,9 @@ export function BoardsPage() {
   }
 
   return (
-    <main className="page page-wide">
-      <TopNav current="board" />
+    <div className="page-shell">
+<TopNav current="board" />
+<main className="page page-wide">
       <header className="page-head boards-head">
         <h1>画板</h1>
         <div className="boards-head-tools">
@@ -230,6 +231,7 @@ export function BoardsPage() {
         </ul>
       </section>
     </main>
+</div>
   )
 }
 
@@ -243,17 +245,22 @@ export function PilePage({ id }: { id: string }) {
 
   if (ready && !pile) {
     return (
-      <main className="page page-wide">
-        <TopNav current="board" />
+      <div className="page-shell">
+<TopNav current="board" />
+<main className="page page-wide">
         <a className="crumb-link back-link" href="#/boards">
           <IconBack />
           画板
         </a>
         <p className="empty">找不到这个堆，可能已经删掉了。</p>
       </main>
+</div>
     )
   }
-  if (!ready || !pile) return <main className="page page-wide"><TopNav current="board" /></main>
+  if (!ready || !pile) return <div className="page-shell">
+<TopNav current="board" />
+<main className="page page-wide"></main>
+</div>
 
   const inside = sortBoards(boardsInPile(pile.id, boards!), use!, sort)
   const save = () => {
@@ -262,8 +269,9 @@ export function PilePage({ id }: { id: string }) {
   }
 
   return (
-    <main className="page page-wide">
-      <TopNav current="board" />
+    <div className="page-shell">
+<TopNav current="board" />
+<main className="page page-wide">
       <header className="page-head boards-head">
         <a className="crumb-link" href="#/boards" aria-label="回到画板列表">
           <IconBack />
@@ -337,5 +345,6 @@ export function PilePage({ id }: { id: string }) {
         </button>
       </div>
     </main>
+</div>
   )
 }
