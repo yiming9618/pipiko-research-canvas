@@ -9,6 +9,22 @@ import { db } from '../../store/db'
 import { Crumb } from './Crumb'
 import { rememberOrigin, usePinchNav, useStageAnimation } from './zoom'
 
+const KIND_ORDER = ['发现', '实验', '问题', '思考', '下一步']
+
+/** "发现 2 · 实验 1 · 思考 1" (other headings after the five kinds). */
+function kindCounts(cards: Card[]): string {
+  const counts = new Map<string, number>()
+  for (const c of cards) {
+    const k = c.kind === '其他' ? c.heading || '其他' : c.kind
+    counts.set(k, (counts.get(k) ?? 0) + 1)
+  }
+  const rank = (k: string) => (KIND_ORDER.includes(k) ? KIND_ORDER.indexOf(k) : KIND_ORDER.length)
+  return [...counts.entries()]
+    .sort((a, b) => rank(a[0]) - rank(b[0]))
+    .map(([k, n]) => `${k} ${n}`)
+    .join(' · ')
+}
+
 /**
  * One day: every card that carries this date, whichever board it is on.
  * Each card names its board; tapping it opens that board with the card in view.
@@ -83,6 +99,7 @@ export function DayView({ date, days }: { date: string; days: string[] }) {
           <section key={boardId} className="day-board" aria-label={`画板：${boardName(boardId)}`}>
             <h2>
               <a href={boardHref(boardId)}>{boardName(boardId)}</a>
+              <span className="day-board-count">{kindCounts(cards)}</span>
             </h2>
             <ul className="day-cards">
               {cards

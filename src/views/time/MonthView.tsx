@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useMemo, useRef } from 'react'
 import { KIND_COLOR } from '../../domain/colors'
+import { homeBoardId } from '../../domain/migrate'
 import { neighbours, shownMonths } from '../../domain/timeline'
 import type { Card, ResearchRecord } from '../../domain/types'
 import { db, todayLocal } from '../../store/db'
@@ -35,6 +36,7 @@ export function MonthView({ ym, days }: { ym: string; days: string[] }) {
     return imports.map((e, i) => ({ date: e.date, title: papers[i]?.title ?? '' })).filter((r) => r.title)
   }, [ym])
   const order = useLiveQuery(async () => new Map((await db.imports.toArray()).map((e) => [e.id, e.imported_at])))
+  const boardNames = useLiveQuery(async () => new Map((await db.boards.filter((b) => !b.deleted).toArray()).map((b) => [b.id, b.name])))
 
   const shown = useMemo(() => {
     const map = new Map<string, Day>()
@@ -91,7 +93,7 @@ export function MonthView({ ym, days }: { ym: string; days: string[] }) {
       <div className="stage" ref={stage} style={{ visibility: ready ? 'visible' : 'hidden' }}>
         <div className="day-grid">
           {shown.map((d) => (
-            <DayTile key={d.date} day={d} today={d.date === today} />
+            <DayTile key={d.date} day={d} today={d.date === today} boardNames={boardNames} />
           ))}
         </div>
       </div>
@@ -99,7 +101,18 @@ export function MonthView({ ym, days }: { ym: string; days: string[] }) {
   )
 }
 
-function DayTile({ day, today }: { day: Day; today: boolean }) {
+const SHOW_BOARDS = 3
+
+function DayTile({ day, today, boardNames }: { day: Day; today: boolean; boardNames?: Map<string, string> }) {
+  // the boards this day's cards are on, most cards first; at most three lines, then "另有 N 个画板"
+  const perBoard = new Map<string, number>()
+  for (const c of day.cards) {
+    const name = boardNames?.get(homeBoardId(c))
+    if (name !== undefined) perBoard.set(name, (perBoard.get(name) ?? 0) + 1)
+  }
+  const boards = [...perBoard.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'zh'))
+  const shown = boards.length > SHOW_BOARDS ? boards.slice(0, SHOW_BOARDS - 1) : boards
+  const rest = boards.length - shown.length
   const first = day.records[0]
   const more = day.records.length - 1
   const title = first ? (first.title || first.summary || '（没有标题）') + (more > 0 ? ` 等 ${more + 1} 份` : '') : ''
@@ -109,6 +122,17 @@ function DayTile({ day, today }: { day: Day; today: boolean }) {
       <b>{label}</b>
       {title && <span className="tile-title">{title}</span>}
       {day.reads.length > 0 && <span className="tile-title">读了 {day.reads.join('、')}</span>}
+      {shown.length > 0 && (
+        <span className="tile-boards">
+          {shown.map(([name, n]) => (
+            <span key={name} className="tile-board">
+              <span className="tile-board-name">{name}</span>
+              <span className="tile-board-n">{n} 张</span>
+            </span>
+          ))}
+          {rest > 0 && <span className="tile-board tile-board-more">另有 {rest} 个画板</span>}
+        </span>
+      )}
       {day.cards.length > 0 && (
         <span className="thumb" role="img" aria-label={`${day.cards.length} 张卡片`}>
           {day.cards.slice(0, 9).map((c) => (

@@ -167,7 +167,12 @@ export function BoardsPage() {
       <TopNav current="board" />
       <header className="page-head boards-head">
         <h1>画板</h1>
-        <SortSwitch sort={sort} onChange={setSort} />
+        <div className="boards-head-tools">
+          <SortSwitch sort={sort} onChange={setSort} />
+          <a className="btn timeline-link" href="#/time">
+            Timeline
+          </a>
+        </div>
       </header>
 
       <div className="row-actions">

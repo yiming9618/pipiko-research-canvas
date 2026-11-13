@@ -61,6 +61,10 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
     [research('2026-11-12', '十二号的记录', '霉菌研究', '十二号'), '霉菌研究'],
     [research('2027-03-02', '明年三月的', '霉菌研究', '三月'), '霉菌研究'],
     [research('2024-06-30', '前年六月的', '共在', '六月'), '共在'],
+    // three more boards on 11/12, so that day has four
+    [research('2026-11-12', '十二号甲', '画板甲', '甲'), '画板甲'],
+    [research('2026-11-12', '十二号乙', '画板乙', '乙'), '画板乙'],
+    [research('2026-11-12', '十二号丙', '画板丙', '丙'), '画板丙'],
   ]) {
     await page.locator('.md-input').fill(md)
     await page.getByRole('button', { name: '放进去' }).click()
@@ -76,10 +80,17 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   await page.getByText(/1 篇论文放进论文库/).waitFor()
 
   // ── month
-  await page.getByRole('link', { name: '时间', exact: true }).click()
+  // Timeline is reached from 画板, beside the sort buttons
+  check(`${tag} 一级导航只有主页、画板、论文库`, (await page.locator('.topnav-links a').allInnerTexts()).join(' ') === '主页 画板 论文库')
+  await page.getByRole('link', { name: '画板', exact: true }).click()
+  await page.getByRole('heading', { name: '画板', level: 1 }).waitFor()
+  const tl = page.getByRole('link', { name: 'Timeline', exact: true })
+  check(`${tag} 画板总览：Timeline 按钮在排序按钮旁边，单独一个，≥ 44px`, (await tl.boundingBox()).height >= 44 && (await page.locator('.boards-head .seg').getByRole('link').count()) === 0 && (await page.locator('.boards-head .seg button').count()) === 2)
+  check(`${tag} 画板总览原有的新建画板、新建堆仍在`, (await page.getByRole('button', { name: '新建画板' }).isVisible()) && (await page.getByRole('button', { name: '新建堆' }).isVisible()))
+  await tl.click()
   await page.getByRole('heading', { name: '3 月', level: 1 }).waitFor()
   check(`${tag} 打开时间视图，落在最近有内容的月份（2027 年 3 月）`, (await page.evaluate(() => location.hash)) === '#/time/2027-03')
-  check(`${tag} “时间”和“画板”并列在导航里`, (await page.locator('.topnav-links a').allInnerTexts()).join(' ') === '主页 画板 时间 论文库')
+  check(`${tag} Timeline 里导航高亮的是“画板”，顶部有“← 画板”`, (await page.locator('.topnav-links a[aria-current=page]').innerText()) === '画板' && (await page.locator('.timeline-bar a', { hasText: '画板' }).isVisible()))
   await page.getByRole('link', { name: '往前：2026 年 11 月' }).click()
   await page.getByRole('heading', { name: '11 月', level: 1 }).waitFor()
   check(`${tag} 月份往前：3 月之前直接是 2026 年 11 月`, true)
@@ -88,6 +99,10 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   check(`${tag} 没有上中下旬`, (await page.locator('.period, .period-label, .blank-day').count()) === 0)
   const tile = page.locator('.day-tile[data-zoom="2026-11-10"]')
   check(`${tag} 日期块：两块画板上那天的卡片都算（4 张）`, (await tile.locator('.thumb span').count()) === 4)
+  const boardLines = (await tile.locator('.tile-board').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim())
+  check(`${tag} 日期块写出各画板的名字和张数`, boardLines.length === 2 && boardLines.includes('霉菌研究 2 张') && boardLines.includes('共在 2 张'), boardLines.join(' | '))
+  const busy = (await page.locator('.day-tile[data-zoom="2026-11-12"] .tile-board').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim())
+  check(`${tag} 一天有 4 块画板：只列 2 块，其余写“另有 2 个画板”`, busy.length === 3 && busy[2] === '另有 2 个画板', busy.join(' | '))
   check(`${tag} 日期块上有“读了 [论文]”`, await tile.getByText('读了 时间视图里的论文').isVisible())
   await settled(page)
   await page.screenshot({ path: `${out}/${size.name}-time-1-month.png` })
@@ -96,8 +111,10 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   await tile.click()
   await page.getByRole('heading', { name: '11/10', level: 1 }).waitFor()
   await page.locator('.day-card').first().waitFor()
-  const groups = await page.locator('.day-board h2').allInnerTexts()
+  const groups = await page.locator('.day-board h2 a').allInnerTexts()
   check(`${tag} 这一天：来自两块画板的卡片，按画板分组`, groups.length === 2 && groups.includes('霉菌研究') && groups.includes('共在') && (await page.locator('.day-card').count()) === 4, groups.join('、'))
+  const counts = (await page.locator('.day-board-count').allInnerTexts()).join(' / ')
+  check(`${tag} 每块画板标题旁有卡片类型统计`, counts === '发现 1 · 问题 1 / 发现 1 · 问题 1', counts)
   check(`${tag} 每张卡片标出所属画板`, (await page.locator('.day-card .day-card-board').allInnerTexts()).filter((t) => t === '在「霉菌研究」').length === 2)
   check(`${tag} 这一天读的论文也在`, await page.getByRole('link', { name: '读了 时间视图里的论文' }).isVisible())
   check(`${tag} 日视图：可点元素 ≥ 44px`, (await small('.timeview a, .timeview button')).length === 0, (await small('.timeview a, .timeview button')).join(', '))

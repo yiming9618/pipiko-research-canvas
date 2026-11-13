@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect } from 'react'
 import { db } from '../../store/db'
+import { IconBack } from '../../ui/icons'
 import { TopNav } from '../../ui/TopNav'
 import { DayView } from './DayView'
 import { MonthView } from './MonthView'
@@ -30,8 +31,15 @@ export function TimePage({ param }: { param?: string }) {
 
   return (
     <div className="boardpage timepage">
-      <TopNav current="time" />
+      <TopNav current="board" />
       <main className="board-main">
+        <div className="timeline-bar">
+          <a className="crumb-link" href="#/boards">
+            <IconBack />
+            画板
+          </a>
+          <span className="timeline-name">Timeline</span>
+        </div>
         {!level && days && days.length === 0 && (
           <p className="empty time-empty">还没有卡片。导入一份研究记录，或者在画板上写一张卡片，它们会按日期出现在这里。</p>
         )}
