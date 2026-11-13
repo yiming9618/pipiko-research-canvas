@@ -3856,3 +3856,200 @@ body.is-pointer-dragging {
   touch-action: none;
   cursor: grab;
 }
+
+/* ── export ──────────────────────────────────────────── */
+
+.paper-head-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: -12px;
+}
+
+.paper-head-tools .paper-edit-info {
+  margin-left: 0;
+}
+
+.export-dialog {
+  width: min(520px, calc(100vw - 24px));
+}
+
+.export-dialog .md-input {
+  height: 40vh;
+  margin-top: 10px;
+}
+
+.export-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.export-choice {
+  min-height: 64px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--fast) ease;
+}
+
+.export-choice:hover {
+  border-color: var(--accent);
+}
+
+.export-choice > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.export-choice b {
+  font-size: 16px;
+}
+
+.export-choice > span > span {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-soft);
+}
+
+/* the printed paper: not part of the page on screen */
+.print-sheet {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 18mm 18mm 20mm;
+  }
+
+  body > *:not(.print-sheet) {
+    display: none !important;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+  }
+
+  .print-sheet {
+    display: block;
+    color: #1f1a1b;
+    font-family: 'Noto Sans SC', system-ui, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.7;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .print-sheet h1 {
+    margin: 0 0 10pt;
+    font-size: 19pt;
+    line-height: 1.35;
+    font-weight: 700;
+  }
+
+  .print-info {
+    margin: 0 0 14pt;
+    padding: 8pt 0;
+    border-top: 0.75pt solid #d9cfd1;
+    border-bottom: 0.75pt solid #d9cfd1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3pt 18pt;
+    font-size: 9.5pt;
+  }
+
+  .print-info div {
+    display: flex;
+    gap: 8pt;
+    min-width: 0;
+  }
+
+  .print-info dt {
+    flex: none;
+    width: 4.5em;
+    color: #6e5f62;
+  }
+
+  .print-info dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .print-lead {
+    margin: 0 0 16pt;
+    font-size: 12pt;
+    line-height: 1.65;
+  }
+
+  .print-sheet h2 {
+    margin: 16pt 0 6pt;
+    font-size: 12.5pt;
+    font-weight: 700;
+    break-after: avoid;
+  }
+
+  .print-sheet h3 {
+    margin: 0 0 3pt;
+    font-size: 9.5pt;
+    font-weight: 700;
+    color: var(--c-ink, #4f4a4b);
+    break-after: avoid;
+  }
+
+  .print-block {
+    margin: 0 0 9pt;
+    padding: 6pt 0 6pt 10pt;
+    border-left: 2.5pt solid var(--c-dot, #b4455c);
+    break-inside: avoid;
+  }
+
+  .print-note {
+    margin: 0 0 10pt;
+    break-inside: avoid;
+  }
+
+  .print-note-head {
+    margin: 0 0 2pt;
+    font-size: 9pt;
+    color: #6e5f62;
+  }
+
+  .print-note img {
+    display: block;
+    max-width: 100%;
+    max-height: 90mm;
+    width: auto;
+    height: auto;
+    margin: 4pt 0;
+  }
+
+  .print-sheet .md p,
+  .print-sheet .md ul,
+  .print-sheet .md ol {
+    margin: 0 0 5pt;
+  }
+
+  .print-sheet .md a {
+    color: inherit;
+  }
+
+  .print-foot {
+    margin-top: 22pt;
+    padding-top: 6pt;
+    border-top: 0.75pt solid #e5dcde;
+    font-size: 8pt;
+    color: #8a7d80;
+  }
+}

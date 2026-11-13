@@ -11,6 +11,7 @@ import { IconBack, IconPlus } from '../../ui/icons'
 import { AddToDiscussion } from '../discussions/AddToDiscussion'
 import { CommentRail } from './CommentRail'
 import { EditPaperForm } from './PaperForm'
+import { PaperExport } from './PaperExport'
 
 export function PaperPage({ id }: { id: string }) {
   const [editingInfo, setEditingInfo] = useState(false)
@@ -78,9 +79,12 @@ export function PaperPage({ id }: { id: string }) {
           {editingInfo ? (
             <EditPaperForm paper={paper} full onDone={() => setEditingInfo(false)} />
           ) : (
-            <button type="button" className="btn btn-quiet paper-edit-info" onClick={() => setEditingInfo(true)}>
-              编辑信息
-            </button>
+            <div className="paper-head-tools">
+              <button type="button" className="btn btn-quiet paper-edit-info" onClick={() => setEditingInfo(true)}>
+                编辑信息
+              </button>
+              <PaperExport paper={paper} />
+            </div>
           )}
         </header>
 

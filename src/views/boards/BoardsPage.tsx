@@ -11,6 +11,9 @@ import { IconBack, IconPlus } from '../../ui/icons'
 import { toast } from '../../ui/toast'
 import { TopNav } from '../../ui/TopNav'
 import { AddToDiscussion } from '../discussions/AddToDiscussion'
+import { exportPile } from '../../domain/exportMarkdown'
+import { useNotebook } from '../../store/notebook'
+import { CopyExport } from '../../ui/CopyExport'
 
 const BOARD_DRAG = 'application/x-notebook-board'
 const TINTS = ['pink', 'yellow', 'blue', 'green', 'purple', 'orange', 'teal']
@@ -231,6 +234,7 @@ export function PilePage({ id }: { id: string }) {
   const [sort, setSort] = useState<BoardSort>(remember)
   const [name, setName] = useState<string | null>(null)
   const pile = piles?.find((p) => p.id === id)
+  const notebook = useNotebook()
 
   if (ready && !pile) {
     return (
@@ -295,6 +299,13 @@ export function PilePage({ id }: { id: string }) {
           }}
         />
         <AddToDiscussion refs={[{ type: 'pile', id: pile.id }]} label="整个堆放进讨论框" />
+        <CopyExport
+          label="导出整个堆（Markdown）"
+          disabled={!notebook || inside.length === 0}
+          text={() => (notebook ? exportPile(pile.id, notebook) : '')}
+          done={`已复制堆「${pile.name}」的 ${inside.length} 块画板（Markdown）`}
+          fileName={pile.name}
+        />
       </div>
 
       {inside.length === 0 && <p className="empty">这个堆还是空的。在画板列表里，用每块画板下面的“放进堆…”把画板放进来，或者把画板拖到堆上。</p>}

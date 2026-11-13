@@ -29,6 +29,8 @@ import {
 import { historyState, redoLast, startHistory, subscribeHistory, undoLast } from '../../store/history'
 import { exportBoard } from '../../domain/exportMarkdown'
 import { copyText } from '../../ui/clipboard'
+import { CopyExport } from '../../ui/CopyExport'
+import { useNotebook } from '../../store/notebook'
 import { POINTER_DROP, type PointerDrop } from '../../ui/pointerDrag'
 import { boardCounts, deleteBoard, renameBoard, touchBoard } from '../../store/boardStore'
 import { db, localChangeListeners, todayLocal } from '../../store/db'
@@ -534,14 +536,7 @@ export function BoardView({ boardId, focus }: Props) {
   }, [selectedLink, selection, strokes, items, itemByRef, cardById, isHome, say])
 
   // everything the export needs, read ahead of time: copying has to happen in the same tap on iPad and iPhone
-  const notebook = useLiveQuery(async () => {
-    if (!isEditing) return null
-    const [papers, blocks, types, records, cards, boardItems, connectors, strokes, piles, boards, imports] = await Promise.all([
-      db.papers.toArray(), db.blocks.toArray(), db.types.toArray(), db.records.toArray(), db.cards.toArray(), db.boardItems.toArray(),
-      db.connectors.toArray(), db.strokes.toArray(), db.piles.toArray(), db.boards.toArray(), db.imports.toArray(),
-    ])
-    return { papers, blocks, types, records, cards, boardItems, connectors, strokes, piles, boards, imports }
-  }, [isEditing])
+  const notebook = useNotebook()
 
   const exportSelection = async () => {
     if (!notebook) return
@@ -812,6 +807,16 @@ export function BoardView({ boardId, focus }: Props) {
       <BoardHead board={board} back={back} editing={isEditing} />
       {loaded && hasContent && <span className="board-state">{(cards?.length ?? 0) + ' 张卡片'}</span>}
       {loaded && <AddToDiscussion refs={[{ type: 'board', id: boardId }]} iconOnly label="把这块画板放进讨论框" />}
+      {loaded && (
+        <CopyExport
+          iconOnly
+          label="导出这块画板（Markdown）"
+          disabled={!notebook}
+          text={() => (notebook ? exportBoard(boardId, notebook) : '')}
+          done={`已复制画板「${board.name}」（Markdown）`}
+          fileName={board.name}
+        />
+      )}
     </>
   ) : null
 
