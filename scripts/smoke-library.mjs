@@ -140,7 +140,8 @@ for (const size of sizes) {
   const smallTargets = () =>
     page.evaluate(() =>
       [...document.querySelectorAll('button, a, summary, select, input:not([type=file])')]
-        .filter((el) => !el.classList.contains('sr-only') && !el.closest('.md'))
+        // keyboard-only buttons (hidden until focused) are not tap targets
+        .filter((el) => !el.classList.contains('sr-only') && !el.classList.contains('is-hidden') && !el.closest('.md'))
         .map((el) => ({ t: (el.textContent || el.getAttribute('aria-label') || el.tagName).trim().slice(0, 14), r: el.getBoundingClientRect() }))
         .filter((x) => x.r.width > 0 && (x.r.height < 44 || x.r.width < 44))
         .map((x) => `${x.t} ${Math.round(x.r.width)}×${Math.round(x.r.height)}`),
@@ -216,8 +217,12 @@ for (const size of sizes) {
   if (!size.isMobile) check(`${tag} 左边仍显示论文库列表`, await page.locator('.liblist').isVisible())
 
   // edit a block
-  await page.locator('section.block', { hasText: '研究方法' }).locator('.editable').click()
-  await page.getByLabel('「研究方法」这一块').fill('做了六周的家庭部署，我补充：每周访谈。')
+  // a tap selects (read-only); the "编辑" button on the selected card opens it
+  const method = page.locator('section.block', { hasText: '研究方法' })
+  await method.locator('.editable').click()
+  check(`${tag} 单击重点卡片只是选中，不进入编辑`, (await method.getAttribute('class')).includes('is-selected') && (await method.locator('textarea').count()) === 0)
+  await method.getByRole('button', { name: '编辑「研究方法」这一块' }).click()
+  await method.locator('textarea').fill('做了六周的家庭部署，我补充：每周访谈。')
   await page.getByRole('button', { name: '保存' }).click()
   await page.getByText('我补充：每周访谈。').waitFor()
   check(`${tag} 编辑区块，标出"改过"`, await page.locator('.block-edited').isVisible())
@@ -231,13 +236,16 @@ for (const size of sizes) {
   check(`${tag} 手动新增重点区块`, true)
 
   // delete a block
-  await page.locator('section.block', { hasText: '需要知情同意' }).locator('.editable').click()
-  await page.getByRole('button', { name: '删除' }).click()
+  const ethics = page.locator('section.block', { hasText: '需要知情同意' })
+  await ethics.locator('.editable').click()
+  await ethics.locator('.block-edit').click()
+  await ethics.getByRole('button', { name: '删除' }).click()
   await page.locator('section.block', { hasText: '需要知情同意' }).waitFor({ state: 'detached' })
   check(`${tag} 删除区块`, true)
 
   // comments
-  await page.getByPlaceholder('写一条理解…').fill('我自己的想法。')
+  await page.mouse.click(5, 300) // tap empty space: no card selected, so the note is about the whole paper
+  await page.getByPlaceholder('对整篇论文写一条理解…').fill('我自己的想法。')
   await page.getByRole('button', { name: '加上' }).click()
   await page.locator('.source[data-source=me]').waitFor()
   await page.locator('.rail input[type=file]').setInputFiles({ name: 'sketch.png', mimeType: 'image/png', buffer: PNG })

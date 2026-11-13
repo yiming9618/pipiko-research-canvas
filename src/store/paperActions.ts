@@ -45,10 +45,12 @@ export async function savePaperField(
   await applyChanges({ papers: [{ ...paper, [field]: value.trim(), updated_at: nowIso() }] })
 }
 
-export async function addComment(paperId: string, text: string): Promise<void> {
+/** `blockId`: the highlight card the note is about (none = the whole paper). */
+export async function addComment(paperId: string, text: string, blockId?: string): Promise<void> {
+  const now = nowIso()
   await applyChanges({
     comments: [
-      { id: newId('cmt'), paper_id: paperId, date: todayLocal(), source: 'me', text: text.trim(), updated_at: nowIso() },
+      { id: newId('cmt'), paper_id: paperId, date: todayLocal(), source: 'me', text: text.trim(), created_at: now, ...(blockId ? { block_id: blockId } : {}), updated_at: now },
     ],
   })
 }
@@ -56,13 +58,14 @@ export async function addComment(paperId: string, text: string): Promise<void> {
 export async function addImageComment(
   paperId: string,
   image: { mime: string; w: number; h: number; data: string },
+  blockId?: string,
 ): Promise<void> {
   const now = nowIso()
   const assetId = `asset_${hashText(image.data)}`
   await applyChanges({
     assets: [{ id: assetId, ...image, updated_at: now }],
     comments: [
-      { id: newId('cmt'), paper_id: paperId, date: todayLocal(), source: 'drawing', text: '', asset_id: assetId, updated_at: now },
+      { id: newId('cmt'), paper_id: paperId, date: todayLocal(), source: 'drawing', text: '', asset_id: assetId, created_at: now, ...(blockId ? { block_id: blockId } : {}), updated_at: now },
     ],
   })
 }

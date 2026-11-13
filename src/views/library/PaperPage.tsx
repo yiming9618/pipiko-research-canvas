@@ -1,8 +1,9 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { boardHref } from '../../domain/boards'
 import { shortDate } from '../../domain/importer'
 import { recordBoardId } from '../../domain/migrate'
+import { paperParts } from '../../domain/exportPaper'
 import type { HighlightType, Paper, PaperBlock } from '../../domain/types'
 import { db } from '../../store/db'
 import { addBlock, deleteBlock, saveBlockText, savePaperField } from '../../store/paperActions'
@@ -16,6 +17,21 @@ import { FieldPicker } from './FieldPicker'
 
 export function PaperPage({ id }: { id: string }) {
   const [editingInfo, setEditingInfo] = useState(false)
+  /** The highlight card that is selected (read-only until "编辑"); the rail then shows its notes. */
+  const [selected, setSelected] = useState<string | null>(null)
+  const pageRef = useRef<HTMLDivElement>(null)
+
+  // A tap anywhere outside the cards and the rail lets go of the selection.
+  useEffect(() => {
+    if (!selected) return
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as HTMLElement
+      if (t.closest('.block, .rail, dialog, .toast')) return
+      setSelected(null)
+    }
+    window.addEventListener('pointerdown', onDown)
+    return () => window.removeEventListener('pointerdown', onDown)
+  }, [selected])
   const paper = useLiveQuery(() => db.papers.get(id), [id])
   const blocks = useLiveQuery(
     () => db.blocks.where('paper_id').equals(id).filter((b) => !b.deleted).sortBy('order'),
@@ -42,7 +58,7 @@ export function PaperPage({ id }: { id: string }) {
   if (paper === undefined && blocks === undefined) return null
   if (!paper || paper.deleted) {
     return (
-      <div className="paper">
+      <div className="paper" ref={pageRef}>
         <BackLink />
         <p className="empty">找不到这篇论文，可能已经被撤销导入了。</p>
       </div>
@@ -51,6 +67,13 @@ export function PaperPage({ id }: { id: string }) {
 
   const typeById = new Map((types ?? []).map((t) => [t.id, t]))
   const highlights = (blocks ?? []).filter((b) => b.type_id !== null)
+  // short names for the cards ("研究方法 2" when a type has several), shared with the export
+  const { cardName } = paperParts({ paper, blocks: blocks ?? [], types: types ?? [], comments: [], fields: [] })
+  const chosen = selected && highlights.some((b) => b.id === selected) ? selected : null
+  const select = (id: string, scroll = false) => {
+    setSelected(id)
+    if (scroll) pageRef.current?.querySelector(`[data-block="${id}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }
   const others = (blocks ?? []).filter((b) => b.type_id === null)
   const readDates = [...new Set((imports ?? []).map((e) => e.date))]
   const meta = [paper.authors.join(', '), paper.year, paper.venue].filter(Boolean)
@@ -110,7 +133,7 @@ export function PaperPage({ id }: { id: string }) {
 
         <section className="blocks" aria-label="重点">
           {highlights.map((b) => (
-            <BlockCard key={b.id} block={b} type={typeById.get(b.type_id!)} />
+            <BlockCard key={b.id} block={b} type={typeById.get(b.type_id!)} selected={chosen === b.id} onSelect={() => select(b.id)} />
           ))}
           <AddBlock paper={paper} types={types ?? []} />
         </section>
@@ -154,7 +177,13 @@ export function PaperPage({ id }: { id: string }) {
         </footer>
       </article>
 
-      <CommentRail paperId={paper.id} />
+      <CommentRail
+        paperId={paper.id}
+        cardName={cardName}
+        selected={chosen}
+        onSelectCard={(id) => select(id, true)}
+        onShowAll={() => setSelected(null)}
+      />
     </div>
   )
 }
@@ -168,20 +197,58 @@ function BackLink() {
   )
 }
 
-function BlockCard({ block, type }: { block: PaperBlock; type?: HighlightType }) {
+/**
+ * A highlight card. A tap selects it (and shows only its notes in the rail); it stays read-only.
+ * Editing: double-click (mouse), or the small "编辑" button that appears on a selected card (touch).
+ * No long press, so scrolling and selecting text are left alone.
+ */
+function BlockCard({ block, type, selected = false, onSelect }: { block: PaperBlock; type?: HighlightType; selected?: boolean; onSelect?: () => void }) {
   const name = type ? type.name : block.heading || '其他内容'
+  const [request, setRequest] = useState(0)
+  const [editing, setEditing] = useState(false)
+  const selectable = !!onSelect
+  const edit = () => {
+    window.getSelection()?.removeAllRanges()
+    setRequest((n) => n + 1)
+  }
   return (
-    <section className="block" data-color={type?.color ?? 'plain'}>
+    <section
+      className={`block${selected ? ' is-selected' : ''}`}
+      data-color={type?.color ?? 'plain'}
+      data-block={block.id}
+      onClick={(e) => {
+        if (!selectable || editing || (e.target as HTMLElement).closest('a, button, textarea')) return
+        onSelect()
+      }}
+      onDoubleClick={(e) => {
+        if (!selectable || editing || (e.target as HTMLElement).closest('a, button, textarea')) return
+        onSelect()
+        edit()
+      }}
+    >
       <h2 className="block-type">
         {name}
         {block.edited_md !== undefined && <span className="block-edited">改过</span>}
       </h2>
+      {selectable && !editing && (
+        <button
+          type="button"
+          className={`btn btn-small block-edit${selected ? '' : ' is-hidden'}`}
+          aria-label={`编辑「${name}」这一块`}
+          onClick={edit}
+        >
+          编辑
+        </button>
+      )}
       <EditableText
         value={block.edited_md ?? block.body_md}
         label={`「${name}」这一块`}
         original={block.edited_md !== undefined ? block.body_md : undefined}
         onSave={(text) => saveBlockText(block, text)}
         onDelete={() => deleteBlock(block)}
+        tapToEdit={!selectable}
+        editRequest={request}
+        onEditingChange={setEditing}
       />
     </section>
   )

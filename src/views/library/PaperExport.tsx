@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { exportPaper, paperParts, SOURCE_LABEL, type PaperExportData } from '../../domain/exportPaper'
+import { exportPaper, noteStamp, paperParts, SOURCE_LABEL, type PaperExportData } from '../../domain/exportPaper'
 import type { Paper } from '../../domain/types'
 import { db, todayLocal } from '../../store/db'
 import { copyText } from '../../ui/clipboard'
@@ -128,7 +128,7 @@ export function PaperExport({ paper }: { paper: Paper }) {
 
 /** The printed paper: one clean page flow, for reading on screen or on paper. */
 function PaperSheet({ data, assets }: { data: PaperExportData; assets?: Map<string, { mime: string; data: string; w: number; h: number }> }) {
-  const { paper, highlights, others, understanding, field } = paperParts(data)
+  const { paper, highlights, others, understanding, field, cardName, aboutCard } = paperParts(data)
   const rows: [string, string][] = [
     ['作者', paper.authors.join(', ')],
     ['年份', paper.year === null ? '' : String(paper.year)],
@@ -162,7 +162,7 @@ function PaperSheet({ data, assets }: { data: PaperExportData; assets?: Map<stri
           <h2>重点</h2>
           {highlights.map((h) => (
             <div key={h.block.id} className="print-block" data-color={h.type?.color ?? 'default'}>
-              <h3>{h.type?.name ?? '重点'}</h3>
+              <h3>{cardName.get(h.block.id) ?? h.type?.name ?? '重点'}</h3>
               <Markdown text={h.text} />
             </div>
           ))}
@@ -182,7 +182,8 @@ function PaperSheet({ data, assets }: { data: PaperExportData; assets?: Map<stri
             return (
               <div key={c.id} className="print-note">
                 <p className="print-note-head">
-                  {c.date} · {SOURCE_LABEL[c.source]}
+                  {noteStamp(c)} · {SOURCE_LABEL[c.source]}
+                  {aboutCard(c) ? ` · 对应重点：${aboutCard(c)}` : ''}
                 </p>
                 {img ? <img src={`data:${img.mime};base64,${img.data}`} width={img.w} height={img.h} alt="" /> : null}
                 {c.text.trim() && <Markdown text={c.text} />}

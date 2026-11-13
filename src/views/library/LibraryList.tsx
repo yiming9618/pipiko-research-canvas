@@ -12,7 +12,7 @@ import { setPaperField } from '../../store/fieldActions'
 import { toast } from '../../ui/toast'
 import { boardHref } from '../../domain/boards'
 import { recordBoardId } from '../../domain/migrate'
-import { IconChevron, IconEdit, IconGrip, IconPlus } from '../../ui/icons'
+import { IconChevron, IconEdit, IconFold, IconGrip, IconPlus } from '../../ui/icons'
 
 const UNCATEGORISED = '未分类'
 
@@ -37,9 +37,11 @@ interface ListProps {
   activeId?: string
   /** Beside a board: papers can be dragged out of the list onto it. Called when a drag starts. */
   onDragOut?: () => void
+  /** On the library page (wide screens): fold the list away. */
+  onCollapse?: () => void
 }
 
-export function LibraryList({ activeId, onDragOut }: ListProps) {
+export function LibraryList({ activeId, onDragOut, onCollapse }: ListProps) {
   const papers = useLiveQuery(() => db.papers.filter((p) => !p.deleted).toArray())
   const blocks = useLiveQuery(() => db.blocks.filter((b) => !b.deleted && b.type_id !== null).toArray())
   const types = useLiveQuery(() => db.types.filter((t) => !t.deleted).toArray())
@@ -137,6 +139,11 @@ export function LibraryList({ activeId, onDragOut }: ListProps) {
   return (
     <div className="liblist">
       <div className="liblist-head">
+        {onCollapse && (
+          <button type="button" className="icon-btn lib-collapse" aria-label="收起论文库" title="收起论文库" onClick={onCollapse}>
+            <IconFold />
+          </button>
+        )}
         <h1 className="liblist-title">论文库</h1>
         {!adding && (
           <button type="button" className="btn" onClick={() => setAdding(true)}>

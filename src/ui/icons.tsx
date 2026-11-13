@@ -211,3 +211,11 @@ export const IconShrink = () => (
     <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
   </Icon>
 )
+
+/** Fold a side panel away to the left. */
+export const IconFold = () => (
+  <Icon>
+    <rect x="4" y="5" width="16" height="14" rx="2" />
+    <path d="M9 5v14M15.500 10l-2 2 2 2" />
+  </Icon>
+)

@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useRef, useState } from 'react'
-import { shortDate } from '../../domain/importer'
+import { noteStamp } from '../../domain/exportPaper'
 import type { Asset, Comment, CommentSource } from '../../domain/types'
 import { db } from '../../store/db'
 import { addComment, addImageComment, deleteComment, saveComment } from '../../store/paperActions'
@@ -11,7 +11,17 @@ import { Markdown } from '../../ui/Markdown'
 
 const SOURCE_LABEL: Record<CommentSource, string> = { ai: 'AI 整理', me: '我写的', drawing: '手绘' }
 
-export function CommentRail({ paperId }: { paperId: string }) {
+interface RailProps {
+  paperId: string
+  /** Short names of the paper's live highlight cards (id → "研究方法", "研究方法 2"). */
+  cardName: Map<string, string>
+  /** The selected card: only its notes are shown, and a new note is about it. */
+  selected: string | null
+  onSelectCard: (id: string) => void
+  onShowAll: () => void
+}
+
+export function CommentRail({ paperId, cardName, selected, onSelectCard, onShowAll }: RailProps) {
   const comments = useLiveQuery(
     () => db.comments.where('paper_id').equals(paperId).filter((c) => !c.deleted).toArray(),
     [paperId],
@@ -26,13 +36,15 @@ export function CommentRail({ paperId }: { paperId: string }) {
   const [error, setError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const sorted = [...(comments ?? [])].sort((a, b) =>
-    a.date === b.date ? (a.updated_at < b.updated_at ? 1 : -1) : a.date < b.date ? 1 : -1,
-  )
+  const when = (c: Comment) => c.created_at ?? c.updated_at
+  const all = [...(comments ?? [])].sort((a, b) => (a.date === b.date ? (when(a) < when(b) ? 1 : -1) : a.date < b.date ? 1 : -1))
+  // a note whose card is gone counts as about the whole paper
+  const sorted = selected ? all.filter((c) => c.block_id === selected) : all
+  const about = selected ? cardName.get(selected) : undefined
 
   const submit = async () => {
     if (text.trim() === '') return
-    await addComment(paperId, text)
+    await addComment(paperId, text, selected ?? undefined)
     setText('')
   }
 
@@ -40,7 +52,7 @@ export function CommentRail({ paperId }: { paperId: string }) {
     if (!file) return
     setError('')
     try {
-      await addImageComment(paperId, await fileToImage(file))
+      await addImageComment(paperId, await fileToImage(file), selected ?? undefined)
     } catch (err) {
       setError(err instanceof Error ? err.message : '图片没有加上，请再试一次')
     } finally {
@@ -50,7 +62,17 @@ export function CommentRail({ paperId }: { paperId: string }) {
 
   return (
     <aside className="rail" aria-labelledby="rail-title">
-      <h2 id="rail-title">我的理解</h2>
+      <div className="rail-head">
+        <h2 id="rail-title">我的理解</h2>
+        {about && (
+          <p className="rail-scope">
+            只看「{about}」
+            <button type="button" className="link-btn" onClick={onShowAll}>
+              看全部
+            </button>
+          </p>
+        )}
+      </div>
 
       <div className="rail-add">
         <label>
@@ -59,7 +81,7 @@ export function CommentRail({ paperId }: { paperId: string }) {
             className="edit-input"
             rows={3}
             value={text}
-            placeholder="写一条理解…"
+            placeholder={about ? `关于「${about}」写一条理解…` : '对整篇论文写一条理解…'}
             onChange={(e) => setText(e.target.value)}
           />
         </label>
@@ -87,24 +109,36 @@ export function CommentRail({ paperId }: { paperId: string }) {
         )}
       </div>
 
-      {comments && sorted.length === 0 && <p className="empty">还没有评论。</p>}
+      {comments && sorted.length === 0 && <p className="empty">{about ? '这张重点卡片还没有理解，在上面写下第一条。' : '还没有理解。'}</p>}
       <ul className="rail-list">
         {sorted.map((c) => (
-          <CommentItem key={c.id} comment={c} asset={c.asset_id ? assets?.get(c.asset_id) : undefined} />
+          <CommentItem
+            key={c.id}
+            comment={c}
+            asset={c.asset_id ? assets?.get(c.asset_id) : undefined}
+            card={!selected && c.block_id ? cardName.get(c.block_id) : undefined}
+            onCard={() => c.block_id && onSelectCard(c.block_id)}
+          />
         ))}
       </ul>
     </aside>
   )
 }
 
-function CommentItem({ comment, asset }: { comment: Comment; asset?: Asset }) {
+function CommentItem({ comment, asset, card, onCard }: { comment: Comment; asset?: Asset; card?: string; onCard: () => void }) {
   const [open, setOpen] = useState(false)
-  const label = `${shortDate(comment.date)} 的这条评论`
+  const stamp = noteStamp(comment)
+  const label = `${stamp} 的这条理解`
 
   return (
     <li className="comment">
       <p className="comment-meta">
-        <span>{shortDate(comment.date)}</span>
+        <time dateTime={comment.created_at ?? comment.date}>{stamp}</time>
+        {card && (
+          <button type="button" className="comment-card" onClick={onCard} aria-label={`对应重点：${card}，点一下选中它`}>
+            · {card}
+          </button>
+        )}
         <span className="source" data-source={comment.source}>
           {SOURCE_LABEL[comment.source]}
         </span>

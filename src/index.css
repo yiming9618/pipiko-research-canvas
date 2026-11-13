@@ -4163,3 +4163,161 @@ body.is-pointer-dragging {
 .boardpage.is-immersive .immersive-toggle:focus-visible {
   opacity: 1;
 }
+
+/* ── library: fold the list away, drag its width ─────── */
+
+.lib-collapse,
+.lib-expand {
+  display: none;
+}
+
+@media (min-width: 1100px) {
+  .lib-body {
+    position: relative;
+    grid-template-columns: var(--lib-w, 380px) minmax(0, 1fr);
+  }
+
+  .lib-collapse {
+    display: inline-flex;
+    flex: none;
+    margin-left: -10px;
+  }
+
+  .liblist-head {
+    justify-content: flex-start;
+  }
+
+  .liblist-head .liblist-title {
+    margin-right: auto;
+  }
+
+  .lib.is-collapsed .lib-side {
+    overflow: visible;
+    display: flex;
+    justify-content: center;
+    padding-top: 12px;
+  }
+
+  .lib-expand {
+    display: inline-flex;
+    position: sticky;
+    top: 12px;
+  }
+
+  .lib-grip {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc(var(--lib-w) - 7px);
+    width: 14px;
+    z-index: 4;
+    cursor: col-resize;
+    touch-action: none;
+  }
+
+  .lib-grip::after {
+    content: '';
+    position: sticky;
+    top: calc(50vh - 22px);
+    display: block;
+    margin: 0 auto;
+    width: 4px;
+    height: 44px;
+    border-radius: 2px;
+    background: var(--line);
+    transition: background var(--fast) ease;
+  }
+
+  .lib-grip:hover::after,
+  .lib-grip:focus-visible::after {
+    background: var(--accent);
+  }
+
+  /* folded: the paper takes the room that was freed */
+  .lib.is-collapsed .paper {
+    max-width: 1440px;
+  }
+}
+
+/* ── highlight cards: select first, edit on purpose ──── */
+
+.block {
+  position: relative;
+  cursor: default;
+  transition: box-shadow var(--fast) ease;
+}
+
+.block.is-selected {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--c-dot, var(--accent));
+}
+
+.block-edit {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  min-height: var(--tap);
+  background: var(--surface);
+  animation: appear 140ms var(--ease-out) both;
+}
+
+.edit-actions {
+  justify-content: space-between;
+}
+
+.edit-actions-side {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ── my understanding: per card, and the time it was written ── */
+
+.rail-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rail-scope {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.rail-scope .link-btn {
+  min-height: var(--tap);
+  padding: 0 6px;
+}
+
+.comment-card {
+  min-height: var(--tap);
+  margin: -14px 0;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--accent-deep);
+  cursor: pointer;
+}
+
+.comment-card:hover {
+  text-decoration: underline;
+}
+
+/* not selected: kept for the keyboard only, and shown when it gets focus */
+.block-edit.is-hidden:not(:focus-visible) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  animation: none;
+}

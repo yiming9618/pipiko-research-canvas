@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { exportPaper } from './exportPaper'
+import { exportPaper, noteStamp } from './exportPaper'
 import { legacyFieldId } from './migrate'
 import type { Comment, Field, HighlightType, Paper, PaperBlock } from './types'
 
@@ -83,5 +83,39 @@ describe('论文导出 Markdown', () => {
   it('手动改过的领域以改的为准', () => {
     const own = exportPaper({ paper: paper({ field_id: 'f2' }), types, fields: [...fields, { id: 'f2', name: '交互设计', created_at: T, updated_at: T }], blocks: [], comments: [] })
     expect(own).toContain('- 领域：交互设计')
+  })
+})
+
+describe('理解和重点卡片的对应、时间', () => {
+  const at = (y: number, mo: number, d: number, h: number, mi: number) => new Date(y, mo - 1, d, h, mi).toISOString()
+  const data = (comments: Comment[], blocks: PaperBlock[]) => exportPaper({ paper: paper(), types, fields, blocks, comments })
+
+  it('手写的理解显示到分钟；导入的、旧的只显示日期，不编造时间', () => {
+    expect(noteStamp({ date: '2026-11-12', created_at: at(2026, 11, 12, 9, 5) })).toBe('2026-11-12 09:05')
+    expect(noteStamp({ date: '2026-11-10' })).toBe('2026-11-10')
+    expect(noteStamp({ date: '2026-11-10', created_at: 'not a time' })).toBe('2026-11-10')
+  })
+
+  it('关联到卡片的理解写明对应哪张重点；同一类型有几张时带编号', () => {
+    const md = data(
+      [
+        comment('c1', '2026-11-12', 'me', '关于第二张方法', { block_id: 'm2', created_at: at(2026, 11, 12, 14, 30) }),
+        comment('c2', '2026-11-12', 'me', '关于主旨', { block_id: 'g' }),
+        comment('c3', '2026-11-12', 'me', '整篇的评价'),
+      ],
+      [block('g', 't2', '主旨', 0), block('m1', 't1', '方法一', 1), block('m2', 't1', '方法二', 2)],
+    )
+    expect(md).toContain('### 研究方法 1\n\n方法一')
+    expect(md).toContain('### 研究方法 2\n\n方法二')
+    expect(md).toContain('### 研究主旨/贡献\n\n主旨')
+    expect(md).toContain('### 2026-11-12 14:30 · 我写的 · 对应重点：研究方法 2\n\n关于第二张方法')
+    expect(md).toContain('· 对应重点：研究主旨/贡献\n\n关于主旨')
+    expect(md).toContain('### 2026-11-12 · 我写的\n\n整篇的评价')
+  })
+
+  it('对应的卡片删掉了：这条理解照常导出，当作整篇的', () => {
+    const md = data([comment('c1', '2026-11-12', 'me', '卡片删掉后的理解', { block_id: 'gone' })], [block('gone', 't1', '已删除', 0, { deleted: true })])
+    expect(md).toContain('### 2026-11-12 · 我写的\n\n卡片删掉后的理解')
+    expect(md).not.toContain('对应重点')
   })
 })

@@ -124,6 +124,13 @@ export interface Comment extends Synced {
   text: string
   asset_id?: string
   import_id?: string
+  /**
+   * The highlight card (PaperBlock id) this note is about. Absent = about the whole paper.
+   * When that card is deleted the note stays and counts as about the whole paper again.
+   */
+  block_id?: string
+  /** The moment it was written. Only on notes written here; imported and older notes have just `date`. */
+  created_at?: ISODateTime
 }
 
 export interface ResearchRecord extends Synced {
