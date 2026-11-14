@@ -65,6 +65,18 @@ async function handle(route) {
     git.head = body.sha
     return send(200, {})
   }
+  if (path.startsWith('/contents/') && path !== '/contents/README.md') {
+    const file = decodeURIComponent(path.slice(10))
+    const files = headFiles()
+    if (m === 'GET') return files.has(file) ? send(200, { sha: files.get(file), content: git.blobs.get(files.get(file)) }) : send(404, {})
+    if (m === 'PUT') {
+      if (files.has(file) && body.sha !== files.get(file)) return send(409, {})
+      const next = new Map(files)
+      next.set(file, putBlob(body.content))
+      git.head = putCommit(putTree(next), git.head)
+      return send(files.has(file) ? 200 : 201, { content: { sha: next.get(file) } })
+    }
+  }
   if (m === 'PUT' && path === '/contents/README.md') {
     if (git.head) return send(422, {})
     git.head = putCommit(putTree(new Map([['README.md', putBlob(body.content)]])), null)
@@ -258,7 +270,21 @@ check('准备：iPad 已有全部内容，并在离线时改过一处（还没�
 
 // ════ 2. clearing on the Mac — first interrupted: run while offline, never synced ════
 const commitBefore = git.head
-offline.add('mac')
+// a change on the Mac that is not synced yet: the script must refuse
+await P.goto(url)
+await P.getByRole('button', { name: /现在在想的问题|点一下|测试的问题/ }).click()
+await P.locator('.question-input').fill('测试的问题（改过，还没同步）')
+await P.locator('.question-input').press('Enter')
+await P.waitForTimeout(200)
+offline.add('mac') // and keep it from syncing on its own
+mac.logs.length = 0
+await P.evaluate(RESET)
+await P.waitForTimeout(500)
+check('还有没同步的改动：脚本拒绝执行，并说明先同步', mac.logs.some((l) => l.includes('还有') && l.includes('没有同步')) && git.head === commitBefore, mac.logs.join(' / ').slice(0, 120))
+offline.delete('mac')
+await syncNow(P)
+const commitSynced = git.head
+mac.logs.length = 0
 await P.goto(url)
 await P.waitForTimeout(500)
 await P.evaluate(RESET)
@@ -266,9 +292,13 @@ await P.waitForFunction(() => true)
 await P.waitForTimeout(800)
 const log1 = mac.logs.filter((l) => l.includes('完成：') || l.includes('要清空的内容')).join(' / ')
 check('清零脚本：先列出数量，确认后执行', /要清空的内容共 \d+ 条/.test(log1) && log1.includes('完成：'), log1.slice(0, 160))
+const record = Buffer.from(git.blobs.get(headFiles().get('清零记录.md')) ?? '', 'base64').toString('utf-8')
+check('清零前的版本自动读出，记进数据仓库的「清零记录.md」', record.includes(commitSynced) && mac.logs.some((l) => l.includes(commitSynced.slice(0, 7))), record.split('\n').slice(4, 6).join(' '))
+const commitWithRecord = git.head
+offline.add('mac') // the page is closed before the clearing is synced
 await P.reload()
 await P.waitForTimeout(1000)
-check('执行后、同步前中断（离线、刷新）：数据仓库没变', git.head === commitBefore)
+check('写完删除标记、还没同步就中断：数据仓库只多了清零记录', git.head === commitWithRecord)
 mac.logs.length = 0
 await P.evaluate(RESET)
 await P.waitForTimeout(600)
@@ -277,7 +307,8 @@ check('再运行一次：显示已经是空的，什么都不再改', mac.logs.s
 // ════ 3. back online: the Mac syncs the clearing ════
 offline.delete('mac')
 await syncNow(P)
-check('Mac 同步：清零写进了数据仓库（一次新的提交，旧版本仍在历史里）', git.head !== commitBefore && git.commits.has(commitBefore))
+check('Mac 同步：清零写进了数据仓库（一次新的提交，清零前的版本仍在历史里）', git.head !== commitWithRecord && git.commits.has(commitSynced))
+check('同步后清零记录还在', headFiles().has('清零记录.md'))
 const filesAfter = [...headFiles().keys()]
 check('数据仓库没有删除任何文件', repoFiles.every((p) => filesAfter.includes(p)))
 const left = await looksEmpty(P, 'mac')
@@ -301,8 +332,8 @@ const phone = await device('phone')
 const readsBefore = reads.length
 await connect(phone.page)
 const fetched = reads.slice(readsBefore).filter((r) => r.who === 'phone').map((r) => pathOfBlob(r.sha))
-const oldFiles = fetched.filter((p) => p.startsWith('raw/') || p.startsWith('assets/'))
-check('新设备连接：不会去下载 raw/、assets/ 里的旧测试文件', oldFiles.length === 0, oldFiles.join(', '))
+const oldFiles = fetched.filter((p) => p.startsWith('raw/') || p.startsWith('assets/') || p === '清零记录.md')
+check('新设备连接：不会去下载 raw/、assets/ 里的旧测试文件，也不读清零记录', oldFiles.length === 0, oldFiles.join(', '))
 const phoneLeft = await looksEmpty(phone.page, 'phone')
 check('新设备：一样是空的', phoneLeft.length === 0, phoneLeft.join('，'))
 
