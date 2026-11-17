@@ -95,6 +95,8 @@ interface Props {
   actions?: ReactNode
   /** The view is re-fitted to the content whenever this changes (e.g. another day). */
   fitKey: string
+  /** Loaded, and nothing on it: the view stays where it is, so the first thing put down stays where it was put. */
+  blank?: boolean
   /** Space kept clear at the top for the header. */
   topInset?: number
   ink: Ink
@@ -267,6 +269,7 @@ export function Canvas(props: Props) {
   const fitted = useRef('')
   useLayoutEffect(() => {
     const el = viewportRef.current
+    if (props.blank) fitted.current = props.fitKey
     if (!el || nodes.length === 0 || fitted.current === props.fitKey) return
     fitted.current = props.fitKey
     const minX = Math.min(...nodes.map((n) => n.x))
@@ -282,7 +285,7 @@ export function Canvas(props: Props) {
     const k = Math.max(whole, el.clientWidth < 600 ? 0.5 : 0.7)
     const x = k === whole ? (el.clientWidth - width * k) / 2 - minX * k : margin - minX * k
     setView({ x, y: topInset + 8 - minY * k, k })
-  }, [nodes, props.fitKey, setView, topInset])
+  }, [nodes, props.fitKey, props.blank, setView, topInset])
 
   useEffect(() => {
     if (!props.apiRef) return

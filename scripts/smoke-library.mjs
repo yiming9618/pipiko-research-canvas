@@ -231,7 +231,7 @@ for (const size of sizes) {
   check(`${tag} 编辑区块，标出"改过"`, await page.locator('.block-edited').isVisible())
 
   // add a block by hand
-  await page.getByRole('button', { name: '加一个重点' }).click()
+  await page.getByRole('button', { name: '加一个重点' }).last().click()
   await page.locator('.add-form select').selectOption({ label: '写作结构' })
   await page.locator('.add-form textarea').fill('先讲故事再讲方法。')
   await page.locator('.add-form').getByRole('button', { name: '保存' }).click()
@@ -248,7 +248,7 @@ for (const size of sizes) {
 
   // comments
   await page.mouse.click(5, 300) // tap empty space: no card selected, so the note is about the whole paper
-  await page.getByPlaceholder('对整篇论文写一条理解…').fill('我自己的想法。')
+  await page.getByPlaceholder(/写一条理解…/).fill('我自己的想法。')
   await page.getByRole('button', { name: '加上' }).click()
   await page.locator('.source[data-source=me]').waitFor()
   await page.locator('.rail input[type=file]').setInputFiles({ name: 'sketch.png', mimeType: 'image/png', buffer: PNG })
@@ -268,7 +268,8 @@ for (const size of sizes) {
   await page.goto(`${url}#/settings`)
   check(`${tag} 设置页：“重点类型”默认折叠`, (await page.getByRole('button', { name: '重点类型' }).getAttribute('aria-expanded')) === 'false')
   await page.getByRole('button', { name: '重点类型' }).click()
-  const row = page.locator('.type-row:not(.field-row)', { has: page.locator('input') })
+  // the type that came in from Markdown is the one nothing uses any more (it can be deleted)
+  const row = page.locator('.type-row:not(.field-row)', { has: page.locator('[aria-label^="删除类型"]') })
   await row.locator('input').fill('研究伦理')
   await row.locator('input').blur()
   await row.locator('select').selectOption('yellow')

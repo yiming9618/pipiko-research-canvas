@@ -104,6 +104,8 @@ interface Props {
 }
 
 /** One subject board: its own records and cards, plus pointers to papers and to cards from other boards. */
+const SIZE_NAME = { s: '小', m: '中', l: '大' } as const
+
 export function BoardView({ boardId, focus }: Props) {
   const narrow = useNarrow()
   const board = useLiveQuery(() => db.boards.get(boardId).then((b) => b ?? null), [boardId])
@@ -396,7 +398,7 @@ export function BoardView({ boardId, focus }: Props) {
           y: item.y,
           w: item.w,
           z: item.z,
-          className: 'note',
+          className: `note${item.text_bold ? ' is-bold' : ''} note-${item.text_size ?? 'm'}`,
           content:
             typingKey === key ? (
               <TextBox initial={item.text_override ?? ''} label="文字" onDone={(t) => void saveText(key, t)} />
@@ -611,6 +613,26 @@ export function BoardView({ boardId, focus }: Props) {
       if (oneKey && selectedItem) {
         const home = isHome(oneKey)
         if ((home && oneKey.startsWith('card:')) || selectedItem.ref.type === 'text') buttons.push(quiet('改文字', () => setTypingKey(oneKey)))
+        const textItem = selectedItem.ref.type === 'text' ? selectedItem.existing : undefined
+        if (textItem) {
+          const size = textItem.text_size ?? 'm'
+          const restyle = (patch: { text_size?: 's' | 'm' | 'l'; text_bold?: boolean }) =>
+            void patchItem(boardId, { type: 'text', id: '' }, textItem, textItem, patch)
+          buttons.push(
+            <span key="size" className="seg" role="group" aria-label="字号">
+              {(['s', 'm', 'l'] as const).map((v) => (
+                <button key={v} type="button" className="btn btn-small btn-quiet seg-btn" aria-pressed={size === v} aria-label={`字号：${SIZE_NAME[v]}`} onClick={() => size !== v && restyle({ text_size: v })}>
+                  {SIZE_NAME[v]}
+                </button>
+              ))}
+            </span>,
+          )
+          buttons.push(
+            <button key="bold" type="button" className="btn btn-small btn-quiet seg-btn seg-bold" aria-pressed={!!textItem.text_bold} onClick={() => restyle({ text_bold: !textItem.text_bold })}>
+              加粗
+            </button>,
+          )
+        }
         if (home && selectedItem.existing) {
           buttons.push(
             quiet('恢复原样', () => {
@@ -713,6 +735,47 @@ export function BoardView({ boardId, focus }: Props) {
     setTypingKey(`item:${id}`)
   }
 
+  /** Several pictures: each a little lower and to the right of the one before, the last on top. */
+  const placeImages = useCallback(
+    async (files: File[], at: { x: number; y: number }) => {
+      const images = files.filter((f) => f.type.startsWith('image/'))
+      const skipped = files.length - images.length
+      if (images.length === 0) {
+        if (skipped > 0) say('只能放图片，其他文件没有放进来', true)
+        return
+      }
+      let placed = 0
+      let failed = 0
+      for (const [i, file] of images.entries()) {
+        try {
+          await addImageItem(boardId, { x: at.x + i * 28, y: at.y + i * 28 }, await fileToImage(file), topZ + i, true)
+          placed++
+        } catch {
+          failed++
+        }
+      }
+      const parts = [placed > 0 ? `放进了 ${placed} 张图片` : '']
+      if (failed > 0) parts.push(`${failed} 张打不开`)
+      if (skipped > 0) parts.push(`${skipped} 个不是图片，没有放进来`)
+      say(parts.filter(Boolean).join('；'), placed === 0)
+    },
+    [boardId, topZ, say],
+  )
+
+  // ⌘V / Ctrl+V with a picture on the clipboard (a screenshot, say): into the middle of the view
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t && (t.closest('input, textarea, select, [contenteditable="true"]') || t.closest('dialog'))) return
+      const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'))
+      if (files.length === 0) return
+      e.preventDefault()
+      void placeImages(files, api.current?.center() ?? { x: 0, y: 0 })
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [placeImages])
+
   const addImage = async (file: File | undefined) => {
     if (!file) return
     try {
@@ -728,12 +791,20 @@ export function BoardView({ boardId, focus }: Props) {
 
   // A paper dragged in from the library list (or a card from a search result) is shown here as a pointer.
   const onDragOver = (e: DragEvent) => {
-    if (!e.dataTransfer.types.includes(DRAG_TYPE)) return
+    if (!e.dataTransfer.types.includes(DRAG_TYPE) && !e.dataTransfer.types.includes('Files')) return
     e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
     setDropping(true)
   }
   const onDrop = async (e: DragEvent) => {
     setDropping(false)
+    // pictures from Finder, the desktop, or (iPad) another app
+    if (e.dataTransfer.types.includes('Files')) {
+      e.preventDefault()
+      const at = api.current?.toBoard(e.clientX, e.clientY) ?? api.current?.center() ?? { x: 0, y: 0 }
+      await placeImages([...e.dataTransfer.files], at)
+      return
+    }
     const ref = readDrag(e)
     if (!ref || (ref.type !== 'paper' && ref.type !== 'card' && ref.type !== 'cover')) return
     e.preventDefault()
@@ -793,6 +864,13 @@ export function BoardView({ boardId, focus }: Props) {
     api.current?.focusOn(node.x, node.y, node.w, heights[node.key] ?? 120)
   }, [reveal, nodes, heights])
 
+  const empty = loaded && nodes.length === 0 && (strokes?.length ?? 0) === 0
+  // a board that was empty when opened keeps its view while things are put on it (also when a phone
+  // switches from the one-column template to the arranged layout)
+  const blankAtStart = useRef<{ board: string; blank: boolean } | null>(null)
+  if (loaded && blankAtStart.current?.board !== boardId) blankAtStart.current = { board: boardId, blank: empty }
+  const fitKey = blankAtStart.current?.board === boardId && blankAtStart.current.blank ? boardId : `${boardId}:${columns}`
+
   const back = board?.pile_id && piles?.some((p) => p.id === board.pile_id) ? `#/pile/${board.pile_id}` : '#/boards'
 
   if (loaded && board && board.trashed_at && !board.deleted) {
@@ -844,7 +922,6 @@ export function BoardView({ boardId, focus }: Props) {
     </>
   ) : null
 
-  const empty = loaded && nodes.length === 0 && (strokes?.length ?? 0) === 0
 
   return (
     <div
@@ -890,7 +967,8 @@ export function BoardView({ boardId, focus }: Props) {
         onTwoFingerTap={isEditing ? undo : undefined}
         onMeasure={onMeasure}
         actions={actions}
-        fitKey={`${boardId}:${columns}`}
+        fitKey={fitKey}
+        blank={empty}
         topInset={72}
         ink={{ color: ink.color, size: tool === 'marker' ? MARKER_SIZE : PEN_SIZE, opacity: tool === 'marker' ? MARKER_OPACITY : 1 }}
         apiRef={api}

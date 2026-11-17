@@ -105,7 +105,8 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   await page.waitForTimeout(200)
   check(`${tag} 选中卡片：理解栏只看这张卡片，新写的关联到它`, (await rail.innerText()).includes('只看「研究方法」') && (await rail.locator('.comment').count()) === 1)
   await rail.getByRole('button', { name: '看全部' }).click()
-  check(`${tag} 不选卡片：显示这次阅读的全部理解`, (await rail.locator('.comment').count()) === 2)
+  const total = (await rail.locator('.rail-day-head .group-count').allInnerTexts()).reduce((n, t) => n + parseInt(t, 10), 0)
+  check(`${tag} 不选卡片：显示这次阅读的全部理解（按日期分组）`, total === 2, `${total} 条`)
 
   // ════ 5. a reading made by hand, its title; what is added goes into it ════
   const addReading = page.getByRole('button', { name: '新的一次阅读' })

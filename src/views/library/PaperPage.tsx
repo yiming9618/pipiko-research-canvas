@@ -16,12 +16,14 @@ import { CommentRail } from './CommentRail'
 import { EditPaperForm } from './PaperForm'
 import { PaperExport } from './PaperExport'
 import { FieldPicker } from './FieldPicker'
+import { useRailWidth } from './railWidth'
 
 export function PaperPage({ id }: { id: string }) {
   const [editingInfo, setEditingInfo] = useState(false)
   /** The highlight card that is selected (read-only until "编辑"); the rail then shows its notes. */
   const [selected, setSelected] = useState<string | null>(null)
   const pageRef = useRef<HTMLDivElement>(null)
+  const rail = useRailWidth()
   /** Readings opened or closed by hand. Until then only the latest is open. */
   const [openState, setOpenState] = useState<Record<string, boolean>>({})
   /** The reading new notes go to and the rail shows. Default: the latest. */
@@ -114,7 +116,15 @@ export function PaperPage({ id }: { id: string }) {
   const meta = [paper.authors.join(', '), paper.year, paper.venue].filter(Boolean)
 
   return (
-    <div className="paper" ref={pageRef}>
+    <div
+      className="paper"
+      ref={(node) => {
+        pageRef.current = node
+        rail.ref(node)
+      }}
+      style={rail.style}
+    >
+      <div className="rail-grip" {...rail.grip} />
       <article className="paper-main">
         <BackLink />
         <header className="paper-head">

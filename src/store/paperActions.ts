@@ -196,11 +196,13 @@ async function typeNameTaken(name: string, except?: string): Promise<boolean> {
 
 /** Renaming keeps the old name as an alias, so Markdown using it still lands on this type. */
 export async function saveType(type: HighlightType, patch: { name?: string; color?: string }): Promise<'done' | 'taken'> {
-  const next: HighlightType = { ...type, updated_at: nowIso() }
   const name = patch.name?.trim()
-  if (name && name !== type.name) {
-    if (await typeNameTaken(name, type.id)) return 'taken'
-    next.aliases = [...new Set([...type.aliases, type.name])]
+  if (name && name !== type.name && (await typeNameTaken(name, type.id))) return 'taken'
+  // on top of what is stored now: a colour picked while a rename was being checked is kept
+  const latest = (await db.types.get(type.id)) ?? type
+  const next: HighlightType = { ...latest, updated_at: nowIso() }
+  if (name && name !== latest.name) {
+    next.aliases = [...new Set([...latest.aliases, latest.name])]
     next.name = name
   }
   if (patch.color) next.color = patch.color

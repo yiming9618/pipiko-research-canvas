@@ -1049,7 +1049,8 @@ select,
 /* ── paper page ──────────────────────────────────────── */
 
 .paper {
-  max-width: 1120px;
+  /* fills the room it is given, so "我的理解" stays at the right edge as the room changes */
+  max-width: 1680px;
   padding: 8px 16px 72px;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1058,9 +1059,11 @@ select,
 
 @media (min-width: 760px) {
   .paper {
-    grid-template-columns: minmax(0, 1fr) 320px;
+    /* the column follows the room: see views/library/railWidth.ts */
+    grid-template-columns: minmax(0, 1fr) var(--rail-w, 340px);
     padding: 8px 32px 72px;
     align-items: start;
+    position: relative;
   }
 
   .rail {
@@ -4234,9 +4237,6 @@ body.is-pointer-dragging {
   }
 
   /* folded: the paper takes the room that was freed */
-  .lib.is-collapsed .paper {
-    max-width: 1440px;
-  }
 }
 
 /* ── highlight cards: select first, edit on purpose ──── */
@@ -4618,4 +4618,101 @@ body.is-pointer-dragging {
 .reading-choice select {
   min-height: var(--tap);
   width: 100%;
+}
+
+/* ── paper page: the line between the paper and "我的理解" ── */
+
+.rail-grip {
+  display: none;
+}
+
+@media (min-width: 760px) {
+  .rail-grip {
+    display: block;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    /* centred in the 28px gap */
+    right: calc(32px + var(--rail-w, 340px) + 14px - 7px);
+    width: 14px;
+    z-index: 3;
+    cursor: col-resize;
+    touch-action: none;
+  }
+
+  .rail-grip::after {
+    content: '';
+    position: sticky;
+    top: calc(50vh - 22px);
+    display: block;
+    margin: 0 auto;
+    width: 4px;
+    height: 44px;
+    border-radius: 2px;
+    background: var(--line);
+    transition: background var(--fast) ease;
+  }
+
+  .rail-grip:hover::after,
+  .rail-grip:focus-visible::after {
+    background: var(--accent);
+  }
+}
+
+/* ── "我的理解": one fold per day ── */
+
+.rail-days {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rail-day h3 {
+  margin: 0;
+}
+
+.rail-day-head {
+  font-variant-numeric: tabular-nums;
+}
+
+.rail-day .rail-list {
+  padding-top: 10px;
+}
+
+/* ── free text on a board: size and bold for the whole box ── */
+
+.node.note.note-s {
+  font-size: 14px;
+}
+
+.node.note.note-l {
+  font-size: 24px;
+  line-height: 1.4;
+}
+
+.node.note.is-bold,
+.node.note.is-bold .md strong {
+  font-weight: 700;
+}
+
+.seg {
+  display: inline-flex;
+  gap: 0;
+  padding: 0 4px;
+  border-left: 1px solid var(--line-soft);
+  border-right: 1px solid var(--line-soft);
+}
+
+.seg-btn {
+  min-width: var(--tap);
+  padding: 0 10px;
+}
+
+.seg-btn[aria-pressed='true'] {
+  background: var(--text);
+  color: #fff;
+}
+
+.seg-bold {
+  font-weight: 700;
 }

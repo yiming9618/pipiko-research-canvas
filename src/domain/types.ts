@@ -258,6 +258,10 @@ export interface BoardItem extends Synced {
   z: number
   /** Edited text for cards, or the content of a free text item. */
   text_override?: string
+  /** Free text boxes only: the size of all of its text. Absent = 'm'. */
+  text_size?: 's' | 'm' | 'l'
+  /** Free text boxes only: all of its text bold. Absent = not bold. */
+  text_bold?: boolean
 }
 
 export interface Connector extends Synced {

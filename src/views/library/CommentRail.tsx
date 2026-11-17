@@ -5,7 +5,7 @@ import type { Asset, Comment, CommentSource } from '../../domain/types'
 import { db } from '../../store/db'
 import { addComment, addImageComment, deleteComment, saveComment } from '../../store/paperActions'
 import { EditableText } from '../../ui/EditableText'
-import { IconImage } from '../../ui/icons'
+import { IconChevron, IconImage } from '../../ui/icons'
 import { fileToImage } from '../../ui/image'
 import { Markdown } from '../../ui/Markdown'
 
@@ -36,6 +36,8 @@ export function CommentRail({ paperId, reading, readingOf, cardName, selected, o
   }, [comments])
 
   const [text, setText] = useState('')
+  /** Dates opened or closed by hand. Until then only the most recent date is open. */
+  const [openDates, setOpenDates] = useState<Record<string, boolean>>({})
   const [error, setError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -44,6 +46,14 @@ export function CommentRail({ paperId, reading, readingOf, cardName, selected, o
   // a note whose card is gone counts as about the whole paper
   const sorted = selected ? all.filter((c) => c.block_id === selected) : all
   const about = selected ? cardName.get(selected) : undefined
+  // grouped by the day they were written, newest first (already sorted that way)
+  const days: { date: string; notes: Comment[] }[] = []
+  for (const c of sorted) {
+    const last = days[days.length - 1]
+    if (last && last.date === c.date) last.notes.push(c)
+    else days.push({ date: c.date, notes: [c] })
+  }
+  const isOpen = (date: string) => openDates[date] ?? date === days[0]?.date
 
   const submit = async () => {
     if (text.trim() === '') return
@@ -114,17 +124,35 @@ export function CommentRail({ paperId, reading, readingOf, cardName, selected, o
       </div>
 
       {comments && sorted.length === 0 && <p className="empty">{about ? '这张重点卡片还没有理解，在上面写下第一条。' : reading?.many ? '这次阅读还没有理解。' : '还没有理解。'}</p>}
-      <ul className="rail-list">
-        {sorted.map((c) => (
-          <CommentItem
-            key={c.id}
-            comment={c}
-            asset={c.asset_id ? assets?.get(c.asset_id) : undefined}
-            card={!selected && c.block_id ? cardName.get(c.block_id) : undefined}
-            onCard={() => c.block_id && onSelectCard(c.block_id)}
-          />
-        ))}
-      </ul>
+      <div className="rail-days">
+        {days.map((d) => {
+          const open = isOpen(d.date)
+          return (
+            <section key={d.date} className="rail-day">
+              <h3>
+                <button type="button" className="group-head rail-day-head" aria-expanded={open} onClick={() => setOpenDates((s) => ({ ...s, [d.date]: !open }))}>
+                  <span>{d.date}</span>
+                  <span className="group-count">{d.notes.length} 条</span>
+                  <IconChevron />
+                </button>
+              </h3>
+              {open && (
+                <ul className="rail-list">
+                  {d.notes.map((c) => (
+                    <CommentItem
+                      key={c.id}
+                      comment={c}
+                      asset={c.asset_id ? assets?.get(c.asset_id) : undefined}
+                      card={!selected && c.block_id ? cardName.get(c.block_id) : undefined}
+                      onCard={() => c.block_id && onSelectCard(c.block_id)}
+                    />
+                  ))}
+                </ul>
+              )}
+            </section>
+          )
+        })}
+      </div>
     </aside>
   )
 }
@@ -133,11 +161,12 @@ function CommentItem({ comment, asset, card, onCard }: { comment: Comment; asset
   const [open, setOpen] = useState(false)
   const stamp = noteStamp(comment)
   const label = `${stamp} 的这条理解`
+  const time = stamp.length > 10 ? stamp.slice(11) : ''
 
   return (
     <li className="comment">
       <p className="comment-meta">
-        <time dateTime={comment.created_at ?? comment.date}>{stamp}</time>
+        {time && <time dateTime={comment.created_at ?? comment.date}>{time}</time>}
         {card && (
           <button type="button" className="comment-card" onClick={onCard} aria-label={`对应重点：${card}，点一下选中它`}>
             · {card}

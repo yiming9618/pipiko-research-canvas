@@ -21,7 +21,7 @@ export async function patchItem(
   ref: { type: BoardRefType; id: string },
   existing: BoardItem | undefined,
   current: Placement,
-  patch: Partial<Pick<BoardItem, 'x' | 'y' | 'w' | 'z' | 'text_override'>>,
+  patch: Partial<Pick<BoardItem, 'x' | 'y' | 'w' | 'z' | 'text_override' | 'text_size' | 'text_bold'>>,
 ): Promise<void> {
   const base: BoardItem = existing ?? {
     id: newId('bi'),
@@ -53,19 +53,22 @@ export async function addTextItem(boardId: string, at: { x: number; y: number },
   return id
 }
 
+/** `at`: the top-centre of the picture; `centre`: put its middle there instead (dropped or pasted). */
 export async function addImageItem(
   boardId: string,
   at: { x: number; y: number },
   image: { mime: string; w: number; h: number; data: string },
   z: number,
+  centre = false,
 ): Promise<void> {
   const now = nowIso()
   const assetId = `asset_${hashText(image.data)}`
   const w = Math.max(160, Math.min(320, image.w))
+  const h = (w * image.h) / Math.max(1, image.w)
   await applyChanges({
     assets: [{ id: assetId, ...image, updated_at: now }],
     boardItems: [
-      { id: newId('bi'), board_id: boardId, ref_type: 'image', ref_id: assetId, x: at.x - w / 2, y: at.y, w, h: 0, z, updated_at: now },
+      { id: newId('bi'), board_id: boardId, ref_type: 'image', ref_id: assetId, x: at.x - w / 2, y: centre ? at.y - h / 2 : at.y, w, h: 0, z, updated_at: now },
     ],
   })
 }
