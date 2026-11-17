@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Asset, Card, ImportEntry, Pile, Reading, ResearchRecord, Setting } from '../domain/types'
+import type { Asset, Card, ImportEntry, PaperUse, Pile, Reading, ResearchRecord, Setting } from '../domain/types'
 import { syncOnce } from './engine'
 import { explainFailure } from './github'
 import { MemoryLocal, MemoryRemote } from './memory'
@@ -323,8 +323,8 @@ describe('阅读次数（第 N 次阅读）的同步', () => {
 describe('在读的同步', () => {
   it('存在自己的文件里，不改写论文本身；两台设备各自写，合并成一条', async () => {
     const { remote, phone, ipad, sync } = setup()
-    phone.write('paperUse', { id: 'paper_1', reading_since: at(1), worked_at: at(1), updated_at: at(1) })
-    ipad.write('paperUse', { id: 'paper_1', worked_at: at(2), updated_at: at(2) })
+    phone.write('paperUse', { id: 'paper_1', reading_since: at(1), worked_at: at(1), updated_at: at(1) } as PaperUse)
+    ipad.write('paperUse', { id: 'paper_1', worked_at: at(2), updated_at: at(2) } as PaperUse)
     await sync(phone)
     await sync(ipad)
     await sync(phone)
