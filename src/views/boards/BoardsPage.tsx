@@ -14,6 +14,7 @@ import { AddToDiscussion } from '../discussions/AddToDiscussion'
 import { exportPile } from '../../domain/exportMarkdown'
 import { useNotebook } from '../../store/notebook'
 import { CopyExport } from '../../ui/CopyExport'
+import { BoxMark, useBoxMarks } from '../../ui/marks'
 
 const BOARD_DRAG = 'application/x-notebook-board'
 const TINTS = ['pink', 'yellow', 'blue', 'green', 'purple', 'orange', 'teal']
@@ -69,6 +70,7 @@ function NewNamed({ label, placeholder, onCreate }: { label: string; placeholder
 }
 
 function BoardTile({ board, cards, usedAt, piles, inPile }: { board: Board; cards: Card[]; usedAt: string; piles: Pile[]; inPile: boolean }) {
+  const boxMarks = useBoxMarks()
   const mine = cards.filter((c) => homeBoardId(c) === board.id)
   const move = async (value: string) => {
     if (!value) return
@@ -93,7 +95,9 @@ function BoardTile({ board, cards, usedAt, piles, inPile }: { board: Board; card
           e.dataTransfer.effectAllowed = 'move'
         }}
       >
-        <span className="board-tile-name">{board.name}</span>
+        <span className="board-tile-name">
+          {board.name} <BoxMark names={boxMarks.get(`board:${board.id}`)} />
+        </span>
         <span className="thumb" role="img" aria-label={`${mine.length} 张卡片`}>
           {mine.slice(0, 9).map((c) => (
             <span key={c.id} data-color={KIND_COLOR[c.kind]} />
@@ -148,6 +152,7 @@ function SortSwitch({ sort, onChange }: { sort: BoardSort; onChange: (s: BoardSo
 /** All boards: the ones outside any pile, and the piles (folders) themselves. */
 export function BoardsPage() {
   const { boards, use, piles, cards, ready } = useBoardData()
+  const boxMarks = useBoxMarks()
   const [sort, setSort] = useState<BoardSort>(remember)
   const [over, setOver] = useState<string | null>(null)
 
@@ -208,7 +213,9 @@ export function BoardsPage() {
               >
                 <span className="pile-back" aria-hidden="true" />
                 <span className="pile-front">
-                  <span className="pile-name">{pile.name}</span>
+                  <span className="pile-name">
+                    {pile.name} <BoxMark names={boxMarks.get(`pile:${pile.id}`)} />
+                  </span>
                   <span className="pile-count">{boardsInPile(pile.id, boards!).length} 块画板</span>
                 </span>
               </a>

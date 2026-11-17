@@ -180,15 +180,11 @@ for (const size of sizes) {
   await page.getByRole('button', { name: /霉菌/ }).waitFor()
   check(`${tag} 已读 2 / 想看 0，按 category 分组`, true)
 
+  // colour dots are the paper's 参考价值, chosen by hand: none yet, so no dots and no filter (see smoke-connect)
   const dots = await page.locator('.paper-row', { hasText: 'Living Media Interfaces' }).locator('.dot').count()
-  check(`${tag} 色点按类型只显示一个`, dots === 4, `${dots} 个色点`)
+  check(`${tag} 色点来自手动标的参考价值：还没标，所以没有`, dots === 0, `${dots} 个色点`)
   check(`${tag} 读过 2 次`, await page.getByText(/读过 2 次/).first().isVisible())
   await page.screenshot({ path: `${out}/${size.name}-lib-1-list.png`, fullPage: size.isMobile })
-
-  // filter by a type only paper A has
-  await page.getByRole('button', { name: '研究结果/发现' }).click()
-  check(`${tag} 点颜色筛选`, (await page.locator('.paper-row').count()) === 1)
-  await page.getByRole('button', { name: '研究结果/发现' }).click()
 
   // collapse a group
   await page.getByRole('button', { name: /霉菌/ }).click()

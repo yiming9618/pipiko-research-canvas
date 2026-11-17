@@ -39,3 +39,21 @@ export const archivedBoxes = (boxes: Discussion[]) =>
   live(boxes)
     .filter((b) => !!b.archived_at)
     .sort((a, b) => ((a.archived_at ?? '') < (b.archived_at ?? '') ? 1 : -1))
+
+/**
+ * `paper:<id>` → names of the boxes (in use, not put away) it is in. Read straight from the
+ * box lists, so nothing is stored twice.
+ */
+export function boxesByRef(items: DiscussionItem[], boxes: Discussion[]): Map<string, string[]> {
+  const name = new Map(activeBoxes(boxes).map((b) => [b.id, b.name]))
+  const out = new Map<string, string[]>()
+  for (const i of live(items)) {
+    const n = name.get(i.discussion_id)
+    if (!n) continue
+    const key = `${i.ref_type}:${i.ref_id}`
+    const list = out.get(key) ?? []
+    if (!list.includes(n)) list.push(n)
+    out.set(key, list)
+  }
+  return out
+}

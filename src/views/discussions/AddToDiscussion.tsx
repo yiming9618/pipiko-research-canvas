@@ -1,10 +1,10 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { activeBoxes, type BoxRef } from '../../domain/discussions'
+import { activeBoxes, notYetIn, type BoxRef } from '../../domain/discussions'
 import type { Discussion } from '../../domain/types'
 import { db } from '../../store/db'
 import { addToDiscussion, createDiscussion } from '../../store/discussionActions'
-import { IconChat } from '../../ui/icons'
+import { IconChat, IconCheck } from '../../ui/icons'
 import { toast } from '../../ui/toast'
 
 /** The chooser: pick a discussion box, or make one on the spot. */
@@ -38,15 +38,34 @@ export function DiscussionPicker({ refs, onClose }: { refs: BoxRef[]; onClose: (
   const list = activeBoxes(boxes ?? [])
   return (
     <dialog ref={ref} className="dialog picker" onClose={() => onClose(false)} aria-labelledby="picker-title">
-      <h2 id="picker-title">放进哪个讨论框</h2>
+      <h2 id="picker-title">{refs.length > 1 ? `把 ${refs.length} 样放进哪个讨论框` : '放进哪个讨论框'}</h2>
       {list.length > 0 && (
         <ul className="picker-list">
           {list.map((b) => (
             <li key={b.id}>
-              <button type="button" className="picker-row" onClick={() => void put(b)}>
-                <span>{b.name}</span>
-                <span className="group-count">{(items ?? []).filter((i) => i.discussion_id === b.id).length} 项</span>
-              </button>
+              {(() => {
+                // what of this selection is in the box already (read from the box's list)
+                const have = refs.length - notYetIn(b.id, refs, items ?? []).length
+                const all = have === refs.length
+                return (
+                  <button type="button" className={`picker-row${all ? ' is-in' : ''}`} onClick={() => void put(b)}>
+                    <span>{b.name}</span>
+                    {have > 0 && (
+                      <span className="picker-in">
+                        {all ? (
+                          <>
+                            <IconCheck />
+                            {refs.length > 1 ? '都已在' : '已在'}
+                          </>
+                        ) : (
+                          `已有 ${have} / ${refs.length}`
+                        )}
+                      </span>
+                    )}
+                    <span className="group-count">{(items ?? []).filter((i) => i.discussion_id === b.id).length} 项</span>
+                  </button>
+                )
+              })()}
             </li>
           ))}
         </ul>

@@ -54,6 +54,8 @@ function TypeEditor() {
   const used = useLiveQuery(async () => {
     const count = new Map<string, number>()
     for (const b of await db.blocks.filter((b) => !b.deleted && !!b.type_id).toArray()) count.set(b.type_id!, (count.get(b.type_id!) ?? 0) + 1)
+    // a type a paper is marked with (参考价值) is in use too
+    for (const p of await db.papers.filter((p) => !p.deleted && !!p.value_types?.length).toArray()) for (const t of p.value_types!) count.set(t, (count.get(t) ?? 0) + 1)
     return count
   })
   const [name, setName] = useState('')

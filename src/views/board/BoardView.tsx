@@ -38,6 +38,7 @@ import { db, localChangeListeners, todayLocal } from '../../store/db'
 import { DRAG_TYPE, readDrag } from '../../ui/drag'
 import { IconBack, IconCheck, IconEraser, IconImage, IconLink, IconMarker, IconPen, IconPlus, IconRedo, IconSelect, IconText, IconUndo } from '../../ui/icons'
 import { fileToImage } from '../../ui/image'
+import { BoxMark, useBoxMarks } from '../../ui/marks'
 import { Markdown } from '../../ui/Markdown'
 import { AddToDiscussion } from '../discussions/AddToDiscussion'
 import { KIND_COLOR } from '../../domain/colors'
@@ -85,7 +86,7 @@ function rememberColor(ink: InkChoice): InkChoice {
 }
 
 const TOOL_HINT: Record<Tool, string> = {
-  select: '点一下选中，拖动移动；在空白处圈一圈，选中圈里的；两指移动和缩放',
+  select: '点一下选中，拖动移动；在空白处圈一圈选中几张，可以一起放进讨论框（Mac 也可以按住 Shift 点选）；两指移动和缩放',
   connect: '从一张卡片拖到另一张',
   pen: '用笔或手指画；两指移动和缩放',
   marker: '粗的半透明笔，适合划重点',
@@ -172,6 +173,7 @@ export function BoardView({ boardId, focus }: Props) {
   const [rawOf, setRawOf] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null)
   const [dropping, setDropping] = useState(false)
+  const boxMarks = useBoxMarks()
   /** The card dialog: writing a new card, or changing a hand-written one. */
   const [cardDialog, setCardDialog] = useState<{ card?: Card; kind?: Exclude<Card['kind'], '其他'>; date?: string; round?: number } | null>(null)
   const downAt = useRef<{ x: number; y: number } | null>(null)
@@ -308,6 +310,7 @@ export function BoardView({ boardId, focus }: Props) {
               {card.kind === '其他' ? card.heading : card.kind}
               {!guest && item?.text_override !== undefined && <span className="block-edited">改过</span>}
               <span className="card-date">{shortDate(card.date)}</span>
+              <BoxMark names={boxMarks.get(`card:${card.id}`)} />
               {guest && (
                 <a className="card-source" href={boardHref(homeBoardId(card), card.id)}>
                   来自「{boardName(homeBoardId(card))}」
@@ -433,7 +436,9 @@ export function BoardView({ boardId, focus }: Props) {
                   className: 'papercard',
                   content: (
                     <a href={`#/paper/${paper.id}`}>
-                      <span className="papercard-kind">论文</span>
+                      <span className="papercard-kind">
+                        论文 <BoxMark names={boxMarks.get(`paper:${paper.id}`)} />
+                      </span>
                       <span className="papercard-title">{paper.title || '（没有标题）'}</span>
                       <span className="papercard-meta">
                         {[paper.authors[0], paper.year, paper.venue].filter(Boolean).join(' · ')}
@@ -476,7 +481,7 @@ export function BoardView({ boardId, focus }: Props) {
     }
     // Untouched cards keep their order; anything moved is drawn above them, most recent on top.
     return out.sort((a, b) => (a.z ?? 0) - (b.z ?? 0))
-  }, [sortedRecords, papers, trashedPapers, itemByRef, layout, cardsOf, manualCards, items, assets, typingKey, saveText, recordById, cardById, piles, source, boards, boardId, focus])
+  }, [sortedRecords, papers, trashedPapers, itemByRef, layout, cardsOf, manualCards, items, assets, typingKey, saveText, recordById, cardById, piles, source, boards, boardId, focus, boxMarks])
 
   const topZ = (items ?? []).reduce((max, i) => Math.max(max, i.z), 0) + 1
 

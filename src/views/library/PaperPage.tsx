@@ -17,6 +17,10 @@ import { EditPaperForm } from './PaperForm'
 import { PaperExport } from './PaperExport'
 import { FieldPicker } from './FieldPicker'
 import { useRailWidth } from './railWidth'
+import { isReadingNow } from '../../domain/library'
+import { setReadingNow } from '../../store/paperUse'
+import { BoxMark, useBoxMarks, ValueMarks } from '../../ui/marks'
+import { LocateMenu } from './LocateMenu'
 
 export function PaperPage({ id }: { id: string }) {
   const [editingInfo, setEditingInfo] = useState(false)
@@ -52,6 +56,8 @@ export function PaperPage({ id }: { id: string }) {
     [id],
   )
   const readingRows = useLiveQuery(() => db.readings.where('paper_id').equals(id).toArray(), [id])
+  const use = useLiveQuery(() => db.paperUse.get(id), [id])
+  const boxMarks = useBoxMarks()
   const comments = useLiveQuery(() => db.comments.where('paper_id').equals(id).toArray(), [id])
   const citedOn = useLiveQuery(async () => {
     const p = await db.papers.get(id)
@@ -132,6 +138,20 @@ export function PaperPage({ id }: { id: string }) {
             {restoredMark && <span className="restored-mark">【恢复】</span>}
             {paper.title || paper.doi || '（没有标题）'}
           </h1>
+          <div className="paper-marks">
+            {/* the switch for 在读: on by itself after a real edit; a tap turns it on or off */}
+            <button
+              type="button"
+              className={`reading-switch${isReadingNow(use) ? ' is-on' : ''}`}
+              aria-pressed={isReadingNow(use)}
+              title={isReadingNow(use) ? '在读：点一下取消' : '点一下设为在读'}
+              onClick={() => void setReadingNow(paper.id, !isReadingNow(use))}
+            >
+              在读
+            </button>
+            <ValueMarks paper={paper} types={types ?? []} />
+            <BoxMark names={boxMarks.get(`paper:${paper.id}`)} />
+          </div>
           {restoredMark && <p className="paper-meta">这一份是从垃圾桶恢复的；论文库里还有同一篇的另一份，两份各自独立。</p>}
           {meta.length > 0 && <p className="paper-meta">{meta.join(' · ')}</p>}
           <p className="paper-meta">
@@ -195,6 +215,7 @@ export function PaperPage({ id }: { id: string }) {
         </details>
 
         <div className="readings">
+          <LocateMenu parts={readings} cardName={cardName} onGo={(blockId) => select(blockId, true)} />
           {readings.map((r) => (
             <ReadingSection
               key={r.reading.id}

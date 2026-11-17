@@ -8,6 +8,7 @@ function makeStore() {
   const tables: Required<Changes> = {
     imports: [],
     readings: [],
+    paperUse: [],
     papers: [],
     blocks: [],
     types: builtinTypes(),

@@ -71,6 +71,13 @@ export function paperParts(data: PaperExportData) {
   return { paper, readings, field, cardName, aboutCard, readingOf: pr.readingOf }
 }
 
+/** 参考价值 as names, in the types' order, "Full" last. Types since removed are left out. */
+export function paperValue(paper: Paper, types: HighlightType[]): string[] {
+  const chosen = new Set(paper.value_types ?? [])
+  const names = live(types).filter((t) => chosen.has(t.id)).sort((a, b) => a.order - b.order).map((t) => t.name)
+  return paper.value_full ? [...names, 'Full'] : names
+}
+
 const pad = (n: number) => String(n).padStart(2, '0')
 
 /** "2026-11-10 14:05" for a note written here; just the date for an imported or older one (no time is made up). */
@@ -92,6 +99,8 @@ export function exportPaper(data: PaperExportData): string {
   if (paper.doi) info.push(`- DOI：${paper.doi}`)
   if (paper.url) info.push(`- 链接：${paper.url}`)
   info.push(`- 领域：${field}`)
+  const value = paperValue(paper, data.types)
+  if (value.length > 0) info.push(`- 参考价值：${value.join('、')}`)
   if (paper.status === 'want') info.push('- 状态：想看（还没读）')
   if (paper.why) info.push(`- 为什么想看：${paper.why}`)
   out.push(...info, '')

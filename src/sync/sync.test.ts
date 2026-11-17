@@ -319,3 +319,18 @@ describe('阅读次数（第 N 次阅读）的同步', () => {
     expect(remote.files.has('data/readings/paper_1.json')).toBe(true)
   })
 })
+
+describe('在读的同步', () => {
+  it('存在自己的文件里，不改写论文本身；两台设备各自写，合并成一条', async () => {
+    const { remote, phone, ipad, sync } = setup()
+    phone.write('paperUse', { id: 'paper_1', reading_since: at(1), worked_at: at(1), updated_at: at(1) })
+    ipad.write('paperUse', { id: 'paper_1', worked_at: at(2), updated_at: at(2) })
+    await sync(phone)
+    await sync(ipad)
+    await sync(phone)
+    const file = JSON.parse(remote.files.get('data/paper-use.json')!)
+    expect(file.tables.paperUse).toHaveLength(1)
+    expect(file.tables.paperUse[0].reading_since).toBeUndefined() // the newer one (switched off) wins
+    expect([...remote.files.keys()].some((p) => p.startsWith('data/papers/'))).toBe(false)
+  })
+})

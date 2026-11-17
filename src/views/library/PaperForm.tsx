@@ -1,4 +1,6 @@
+import { useLiveQuery } from 'dexie-react-hooks'
 import { useState, type FormEvent } from 'react'
+import { db } from '../../store/db'
 import type { Paper } from '../../domain/types'
 import { addPaper, savePaperInfo } from '../../store/paperActions'
 import { trashPaper } from '../../store/trashActions'
@@ -76,6 +78,15 @@ export function EditPaperForm({ paper, full, onDone }: { paper: Paper; full?: bo
   const [authors, setAuthors] = useState(paper.authors.join(', '))
   const [year, setYear] = useState(paper.year === null ? '' : String(paper.year))
   const [venue, setVenue] = useState(paper.venue)
+  const [valueTypes, setValueTypes] = useState<string[]>(paper.value_types ?? [])
+  const [valueFull, setValueFull] = useState(!!paper.value_full)
+  const types = useLiveQuery(() => db.types.filter((t) => !t.deleted).sortBy('order'))
+  // for reference only: the kinds of highlights this paper already has (nothing is chosen from them)
+  const inside = useLiveQuery(async () => {
+    if (!full) return []
+    const blocks = await db.blocks.where('paper_id').equals(paper.id).filter((b) => !b.deleted && !!b.type_id).toArray()
+    return [...new Set(blocks.map((b) => b.type_id!))]
+  }, [paper.id, full])
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -90,6 +101,8 @@ export function EditPaperForm({ paper, full, onDone }: { paper: Paper; full?: bo
             authors: authors.split(/[,，;；、]/).map((a) => a.trim()).filter(Boolean),
             year: Number.isFinite(y) ? y : null,
             venue,
+            value_types: (types ?? []).filter((t) => valueTypes.includes(t.id)).map((t) => t.id),
+            value_full: valueFull,
           }
         : {}),
     })
@@ -130,6 +143,45 @@ export function EditPaperForm({ paper, full, onDone }: { paper: Paper; full?: bo
         <span>为什么想看</span>
         <input value={why} onChange={(e) => setWhy(e.target.value)} />
       </label>
+      {full && types && (
+        <fieldset className="value-pick">
+          <legend>参考价值（这篇论文在哪些方面值得参考，可以多选，也可以不选）</legend>
+          <div className="chips">
+            {types.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className="chip"
+                data-color={t.color}
+                aria-pressed={valueTypes.includes(t.id)}
+                onClick={() => setValueTypes(valueTypes.includes(t.id) ? valueTypes.filter((x) => x !== t.id) : [...valueTypes, t.id])}
+              >
+                <span className="dot" aria-hidden="true" />
+                {t.name}
+              </button>
+            ))}
+            <button type="button" className="chip" aria-pressed={valueFull} onClick={() => setValueFull(!valueFull)}>
+              <span className="full-tag" aria-hidden="true">
+                Full
+              </span>
+              整篇都值得参考
+            </button>
+          </div>
+          {inside && inside.length > 0 && (
+            <p className="value-hint">
+              参考：这篇论文里已有的重点
+              {types
+                .filter((t) => inside.includes(t.id))
+                .map((t) => (
+                  <span key={t.id} className="value-hint-item" data-color={t.color}>
+                    <span className="dot" aria-hidden="true" />
+                    {t.name}
+                  </span>
+                ))}
+            </p>
+          )}
+        </fieldset>
+      )}
       <div className="row-actions">
         <button type="submit" className="btn btn-primary">
           保存

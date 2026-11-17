@@ -4716,3 +4716,336 @@ body.is-pointer-dragging {
 .seg-bold {
   font-weight: 700;
 }
+
+/* ── small marks: in a discussion box, 在读, Full ── */
+
+.box-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--text-soft);
+  vertical-align: middle;
+}
+
+.box-mark .icon {
+  width: 15px;
+  height: 15px;
+}
+
+.reading-tag {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 1px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  color: #1f6b3a;
+  background: #d9f2df;
+}
+
+.full-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  height: 14px;
+  border: 1px solid var(--text-soft);
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-soft);
+  letter-spacing: 0.02em;
+}
+
+/* ── library: the line under a title, sorting, 选择 ── */
+
+.paper-row-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding-right: 36px;
+}
+
+.paper-row-line .paper-row-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.paper-row-marks {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.paper-row-marks:empty {
+  display: none;
+}
+
+.lib-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+button.paper-row {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  position: relative;
+  padding-left: 48px;
+}
+
+.pick-box {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.paper-row.is-ticked {
+  background: var(--accent-wash);
+}
+
+.paper-row.is-ticked .pick-box {
+  background: var(--text);
+  border-color: var(--text);
+  color: #fff;
+}
+
+.pick-box .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.pick-bar {
+  position: sticky;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 8px 8px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--shadow-pop);
+}
+
+.pick-bar .sel-count {
+  margin-right: auto;
+  font-size: 14px;
+}
+
+.picker-row > span:first-child {
+  margin-right: auto;
+}
+
+.picker-in {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: #1f6b3a;
+}
+
+.picker-in .icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* ── 编辑信息: 参考价值 ── */
+
+.value-pick {
+  margin: 0;
+  padding: 0;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.value-pick legend {
+  margin-bottom: 8px;
+  padding: 0;
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.value-pick .chip:not([data-color])[aria-pressed='true'] {
+  background: var(--accent-wash);
+  border-color: var(--text);
+  font-weight: 500;
+}
+
+.value-hint {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.value-hint-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.value-hint-item .dot {
+  width: 9px;
+  height: 9px;
+}
+
+/* ── paper page: 在读 switch, marks, 定位重点 ── */
+
+.paper-marks {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.reading-switch {
+  min-height: var(--tap);
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1.5px dashed var(--line);
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.reading-switch.is-on {
+  border: 1.5px solid #9fd8ae;
+  background: #d9f2df;
+  color: #1f6b3a;
+}
+
+.locate-row {
+  display: flex;
+}
+
+.locate-open {
+  gap: 10px;
+}
+
+.locate-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.locate-dots .dot {
+  width: 9px;
+  height: 9px;
+}
+
+.dialog.locate {
+  width: min(480px, calc(100vw - 24px));
+  max-height: min(80dvh, 720px);
+  padding: 20px;
+}
+
+.locate-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.locate-list,
+.locate-cards {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.locate-list > li + li {
+  border-top: 1px solid var(--line-soft);
+}
+
+.locate-type,
+.locate-card {
+  width: 100%;
+  min-height: var(--tap);
+  border: none;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.locate-type {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.locate-type-name {
+  margin-right: auto;
+}
+
+.locate-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 8px 6px 30px;
+}
+
+.locate-where {
+  font-size: 13px;
+  color: var(--c-ink, var(--text-soft));
+  font-weight: 500;
+}
+
+.locate-text {
+  font-size: 14px;
+  color: var(--text-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.locate-type:hover,
+.locate-card:hover {
+  background: var(--line-soft);
+}
+
+@media (max-width: 759px) {
+  /* phone: a sheet from the bottom, easy to reach */
+  .dialog.locate {
+    margin: auto auto 0;
+    width: 100%;
+    max-width: 100%;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+  }
+}

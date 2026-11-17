@@ -158,8 +158,8 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   const row = page.locator('.paper-row:visible', { hasText: '阅读次数测试论文' })
   check(`${tag} 论文库里还是一篇`, (await row.count()) === 1)
   check(`${tag} 论文库写的“读过 N 次”和阅读次数一致`, (await row.first().innerText()).includes('读过 3 次'), await row.first().innerText())
-  const dots = await row.first().locator('[data-color]').evaluateAll((els) => [...new Set(els.map((e) => e.getAttribute('data-color')))])
-  check(`${tag} 色点汇总所有阅读的重点`, dots.length >= 3, dots.join(','))
+  // the dots in the list are 参考价值 now (chosen by hand); what the readings hold is shown in 定位重点
+  check(`${tag} 列表的色点不再由重点自动生成`, (await row.first().locator('.dot').count()) === 0)
 
   // ════ 9. Settings: highlight types ════
   await page.goto(`${url}#/settings`)

@@ -1,3 +1,4 @@
+import { workedRow } from './paperUse'
 import { mostRecentBoard } from '../domain/boards'
 import { planImport, type BoardTarget, type ImportOutcome } from '../domain/importer'
 import { placeOnBoard } from './boardStore'
@@ -44,7 +45,9 @@ export async function runImport(raw: string, kindHint: ImportKind, options: Impo
     newId,
   })
   if (outcome.stored) {
-    await applyChanges(outcome.changes)
+    // importing a paper is working on it: 在读
+    const paperId = outcome.entry?.kind === 'paper' ? outcome.entry.paper_id : undefined
+    await applyChanges(paperId ? { ...outcome.changes, paperUse: [await workedRow(paperId)] } : outcome.changes)
     await ensureBoards()
     void runLookups()
   }

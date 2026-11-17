@@ -9,6 +9,7 @@ function makeStore() {
   const t: Required<Changes> = {
     imports: [],
     readings: [],
+    paperUse: [],
     papers: [],
     blocks: [],
     types: builtinTypes(),

@@ -100,6 +100,22 @@ export interface Paper extends Synced {
   trashed_at?: ISODateTime
   /** When it was last brought back from the trash (to mark it when another copy of the same paper exists). */
   restored_at?: ISODateTime
+  /** 参考价值: the highlight types (ids) this paper is worth going back to for, chosen by hand. Independent of its highlight cards. */
+  value_types?: string[]
+  /** 参考价值 "Full": the whole paper is worth going back to. Not the same as every type. */
+  value_full?: boolean
+}
+
+/**
+ * 在读, and when the paper was last worked on. Kept apart from `Paper` on purpose (like `BoardUse`):
+ * merging is per entry, so a note added on one device must not be able to overwrite a title
+ * changed on another. Id = the paper's id. No row = never worked on since this existed.
+ */
+export interface PaperUse extends Synced {
+  /** Set = 在读, since then (the last real edit, or switched on by hand). Absent = not 在读. */
+  reading_since?: ISODateTime
+  /** The last real edit or import (for "最近阅读"). Switching 在读 on or off does not change it. */
+  worked_at?: ISODateTime
 }
 
 /** A highlight block (重点区块) or an unrecognised section of a paper. */
@@ -338,6 +354,7 @@ export interface Tables {
   boardUse: BoardUse
   fields: Field
   readings: Reading
+  paperUse: PaperUse
 }
 
 export type TableName = keyof Tables

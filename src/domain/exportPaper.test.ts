@@ -119,3 +119,11 @@ describe('理解和重点卡片的对应、时间', () => {
     expect(md).not.toContain('对应重点')
   })
 })
+
+describe('参考价值', () => {
+  it('写在基本信息里；Full 单独一项；没选就不写', () => {
+    const md = exportPaper({ paper: paper({ value_types: ['t1'], value_full: true }), types, fields, blocks: [], comments: [] })
+    expect(md).toContain('- 参考价值：研究方法、Full')
+    expect(exportPaper({ paper: paper(), types, fields, blocks: [], comments: [] })).not.toContain('参考价值')
+  })
+})

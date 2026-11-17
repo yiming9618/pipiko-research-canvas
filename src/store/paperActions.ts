@@ -7,12 +7,14 @@ import { readingIdOfImport, type ReadingView } from '../domain/readings'
 import type { Comment, HighlightType, ImportEntry, Paper, PaperBlock, Reading } from '../domain/types'
 import { applyChanges, db, newId, nowIso, todayLocal } from './db'
 import { runLookups } from './lookup'
+import { workedRow } from './paperUse'
 
 export async function saveBlockText(block: PaperBlock, text: string): Promise<void> {
+  if (text.trim() === (block.edited_md ?? block.body_md).trim()) return
   const next: PaperBlock = { ...block, updated_at: nowIso() }
   if (text.trim() === block.body_md.trim()) delete next.edited_md
   else next.edited_md = text.trim()
-  await applyChanges({ blocks: [next] })
+  await applyChanges({ blocks: [next], paperUse: [await workedRow(block.paper_id)] })
 }
 
 export async function deleteBlock(block: PaperBlock): Promise<void> {
@@ -37,6 +39,7 @@ export async function addBlock(paperId: string, typeId: string, text: string, re
         updated_at: nowIso(),
       },
     ],
+    paperUse: [await workedRow(paperId)],
   })
 }
 
@@ -45,7 +48,8 @@ export async function savePaperField(
   field: 'one_liner' | 'basics_md',
   value: string,
 ): Promise<void> {
-  await applyChanges({ papers: [{ ...paper, [field]: value.trim(), updated_at: nowIso() }] })
+  if (value.trim() === paper[field].trim()) return
+  await applyChanges({ papers: [{ ...paper, [field]: value.trim(), updated_at: nowIso() }], paperUse: [await workedRow(paper.id)] })
 }
 
 /** `blockId`: the highlight card the note is about (none = the whole paper). */
@@ -55,6 +59,7 @@ export async function addComment(paperId: string, text: string, blockId?: string
     comments: [
       { id: newId('cmt'), paper_id: paperId, date: todayLocal(), source: 'me', text: text.trim(), created_at: now, ...(blockId ? { block_id: blockId } : {}), ...(readingId ? { reading_id: readingId } : {}), updated_at: now },
     ],
+    paperUse: [await workedRow(paperId, now)],
   })
 }
 
@@ -71,11 +76,13 @@ export async function addImageComment(
     comments: [
       { id: newId('cmt'), paper_id: paperId, date: todayLocal(), source: 'drawing', text: '', asset_id: assetId, created_at: now, ...(blockId ? { block_id: blockId } : {}), ...(readingId ? { reading_id: readingId } : {}), updated_at: now },
     ],
+    paperUse: [await workedRow(paperId, now)],
   })
 }
 
 export async function saveComment(comment: Comment, text: string): Promise<void> {
-  await applyChanges({ comments: [{ ...comment, text: text.trim(), updated_at: nowIso() }] })
+  if (text.trim() === comment.text.trim()) return
+  await applyChanges({ comments: [{ ...comment, text: text.trim(), updated_at: nowIso() }], paperUse: [await workedRow(comment.paper_id)] })
 }
 
 export async function deleteComment(comment: Comment): Promise<void> {
@@ -148,6 +155,9 @@ export interface PaperInfoPatch {
   authors?: string[]
   year?: number | null
   venue?: string
+  /** 参考价值 */
+  value_types?: string[]
+  value_full?: boolean
 }
 
 /** Edits the details of a paper. A new DOI is looked up again when details are still missing. */
@@ -159,6 +169,14 @@ export async function savePaperInfo(paper: Paper, patch: PaperInfoPatch): Promis
   if (patch.authors !== undefined) next.authors = patch.authors
   if (patch.year !== undefined) next.year = patch.year
   if (patch.venue !== undefined) next.venue = patch.venue.trim()
+  if (patch.value_types !== undefined) {
+    if (patch.value_types.length > 0) next.value_types = patch.value_types
+    else delete next.value_types
+  }
+  if (patch.value_full !== undefined) {
+    if (patch.value_full) next.value_full = true
+    else delete next.value_full
+  }
   if (patch.doi !== undefined) {
     const doi = extractDoi(patch.doi)
     if (doi !== paper.doi) {
@@ -220,9 +238,11 @@ export async function addType(name: string, color: string): Promise<'done' | 'ta
   return 'done'
 }
 
-/** How many live highlights use a type. */
+/** How many live highlights, and papers marked with it as 参考价值, use a type. */
 export async function typeUse(typeId: string): Promise<number> {
-  return db.blocks.filter((b) => !b.deleted && b.type_id === typeId).count()
+  const blocks = await db.blocks.filter((b) => !b.deleted && b.type_id === typeId).count()
+  const papers = await db.papers.filter((p) => !p.deleted && !!p.value_types?.includes(typeId)).count()
+  return blocks + papers
 }
 
 /** Only a type made by hand or by an import, and only when no highlight uses it (the page checks). */
@@ -240,16 +260,17 @@ function rowOf(r: ReadingView, now: string): Reading {
 }
 
 export async function saveReadingTitle(r: ReadingView, title: string): Promise<void> {
+  if (title.trim() === r.title.trim()) return
   const now = nowIso()
   const { deleted: _gone, ...row } = rowOf(r, now)
-  await applyChanges({ readings: [{ ...row, title: title.trim(), updated_at: now }] })
+  await applyChanges({ readings: [{ ...row, title: title.trim(), updated_at: now }], paperUse: [await workedRow(r.paper_id, now)] })
 }
 
 /** "+ 新的一次阅读": an empty reading dated today. Returns its id. */
 export async function addReading(paperId: string): Promise<string> {
   const now = nowIso()
   const id = newId('reading')
-  await applyChanges({ readings: [{ id, paper_id: paperId, date: todayLocal(), title: '', created_at: now, updated_at: now }] })
+  await applyChanges({ readings: [{ id, paper_id: paperId, date: todayLocal(), title: '', created_at: now, updated_at: now }], paperUse: [await workedRow(paperId, now)] })
   return id
 }
 
