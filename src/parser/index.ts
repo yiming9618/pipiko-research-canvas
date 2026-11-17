@@ -21,6 +21,8 @@ export interface ParsedPaper {
   /** `type_name` is null for sections the parser does not recognise. */
   blocks: { type_name: string | null; heading: string; body_md: string }[]
   understanding_md: string
+  /** `reading_title:` — the title of this reading. Empty when not given. */
+  reading_title: string
   notices: string[]
 }
 
@@ -126,6 +128,8 @@ function parsePaper(
     basics_md: '',
     blocks: [],
     understanding_md: '',
+    // the template's own placeholder is not a title
+    reading_title: /^这次阅读的小标题|（可选/.test((data.reading_title ?? '').trim()) ? '' : (data.reading_title ?? '').trim(),
     notices,
   }
 

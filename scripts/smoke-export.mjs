@@ -92,8 +92,8 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   await page.locator('.export-choice', { hasText: 'Markdown' }).click()
   await toast('已复制这篇论文')
   md = await clip()
-  const parts = ['# 示例论文标题一', '- 作者：', '- 年份：2024', '- 期刊/会议：', '- DOI：', '- 领域：示例分类一', '## 一句话总结', '## 基础', '## 重点', '### 研究', '## 我的理解', '· AI 整理']
-  check(`${tag} 论文 Markdown：基本信息、一句话总结、基础、重点（带类型）、我的理解（带日期和来源）`, parts.every((t) => md.includes(t)), parts.filter((t) => !md.includes(t)).join(' / '))
+  const parts = ['# 示例论文标题一', '- 作者：', '- 年份：2024', '- 期刊/会议：', '- DOI：', '- 领域：示例分类一', '## 一句话总结', '## 基础', '## 第 1 次阅读｜', '### 研究', '### 我的理解', '· AI 整理']
+  check(`${tag} 论文 Markdown：基本信息、一句话总结、基础，再按阅读次数分组的重点（带类型）和我的理解（带日期和来源）`, parts.every((t) => md.includes(t)), parts.filter((t) => !md.includes(t)).join(' / '))
   check(`${tag} 论文 Markdown 不带模板（不是给 AI 整理用的）`, !md.includes('研究记录的模板'))
 
   // PDF: the system's print dialog is stood in for; the page it would print is checked and turned into a real PDF
@@ -112,7 +112,7 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   const shown = await page.evaluate(() => [...document.body.children].filter((el) => getComputedStyle(el).display !== 'none').map((el) => el.className))
   check(`${tag} 打印时只印论文本身，不印导航和按钮`, shown.length === 1 && shown[0] === 'print-sheet', shown.join(', '))
   const sheet = page.locator('.print-sheet')
-  check(`${tag} 打印页：标题、信息、一句话总结、重点（带类型和颜色）、我的理解`, (await sheet.locator('h1').innerText()) === '示例论文标题一' && (await sheet.locator('.print-info dt').allInnerTexts()).includes('领域') && (await sheet.locator('.print-block').count()) >= 1 && (await sheet.locator('h2', { hasText: '我的理解' }).count()) === 1)
+  check(`${tag} 打印页：标题、信息、一句话总结，按阅读次数分组的重点（带类型和颜色）和我的理解`, (await sheet.locator('h1').innerText()) === '示例论文标题一' && (await sheet.locator('.print-info dt').allInnerTexts()).includes('领域') && (await sheet.locator('.print-block').count()) >= 1 && (await sheet.locator('h2', { hasText: '第 1 次阅读' }).count()) === 1 && (await sheet.locator('h3', { hasText: '我的理解' }).count()) === 1)
   if (size.name === 'mac') {
     await page.pdf({ path: `${out}/paper-export.pdf`, format: 'A4', printBackground: true, preferCSSPageSize: true })
     check(`${tag} 生成了一份 A4 的 PDF`, true)

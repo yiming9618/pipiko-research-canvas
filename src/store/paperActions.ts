@@ -2,8 +2,9 @@
 // go to `edited_md`, and the pasted Markdown stays in the import entry.
 
 import { extractDoi, incomplete } from '../domain/crossref'
-import { findPaper, hashText } from '../domain/importer'
-import type { Comment, HighlightType, Paper, PaperBlock } from '../domain/types'
+import { findPaper, hashText, normalizeTypeName } from '../domain/importer'
+import { readingIdOfImport, type ReadingView } from '../domain/readings'
+import type { Comment, HighlightType, ImportEntry, Paper, PaperBlock, Reading } from '../domain/types'
 import { applyChanges, db, newId, nowIso, todayLocal } from './db'
 import { runLookups } from './lookup'
 
@@ -18,7 +19,8 @@ export async function deleteBlock(block: PaperBlock): Promise<void> {
   await applyChanges({ blocks: [{ ...block, deleted: true, updated_at: nowIso() }] })
 }
 
-export async function addBlock(paperId: string, typeId: string, text: string): Promise<void> {
+/** `readingId`: the reading it is added to. */
+export async function addBlock(paperId: string, typeId: string, text: string, readingId?: string): Promise<void> {
   const siblings = await db.blocks.where('paper_id').equals(paperId).toArray()
   const order = siblings.reduce((max, b) => Math.max(max, b.order + 1), 0)
   const type = await db.types.get(typeId)
@@ -31,6 +33,7 @@ export async function addBlock(paperId: string, typeId: string, text: string): P
         heading: `重点：${type?.name ?? ''}`,
         body_md: text.trim(),
         order,
+        ...(readingId ? { reading_id: readingId } : {}),
         updated_at: nowIso(),
       },
     ],
@@ -46,11 +49,11 @@ export async function savePaperField(
 }
 
 /** `blockId`: the highlight card the note is about (none = the whole paper). */
-export async function addComment(paperId: string, text: string, blockId?: string): Promise<void> {
+export async function addComment(paperId: string, text: string, blockId?: string, readingId?: string): Promise<void> {
   const now = nowIso()
   await applyChanges({
     comments: [
-      { id: newId('cmt'), paper_id: paperId, date: todayLocal(), source: 'me', text: text.trim(), created_at: now, ...(blockId ? { block_id: blockId } : {}), updated_at: now },
+      { id: newId('cmt'), paper_id: paperId, date: todayLocal(), source: 'me', text: text.trim(), created_at: now, ...(blockId ? { block_id: blockId } : {}), ...(readingId ? { reading_id: readingId } : {}), updated_at: now },
     ],
   })
 }
@@ -59,13 +62,14 @@ export async function addImageComment(
   paperId: string,
   image: { mime: string; w: number; h: number; data: string },
   blockId?: string,
+  readingId?: string,
 ): Promise<void> {
   const now = nowIso()
   const assetId = `asset_${hashText(image.data)}`
   await applyChanges({
     assets: [{ id: assetId, ...image, updated_at: now }],
     comments: [
-      { id: newId('cmt'), paper_id: paperId, date: todayLocal(), source: 'drawing', text: '', asset_id: assetId, created_at: now, ...(blockId ? { block_id: blockId } : {}), updated_at: now },
+      { id: newId('cmt'), paper_id: paperId, date: todayLocal(), source: 'drawing', text: '', asset_id: assetId, created_at: now, ...(blockId ? { block_id: blockId } : {}), ...(readingId ? { reading_id: readingId } : {}), updated_at: now },
     ],
   })
 }
@@ -183,14 +187,82 @@ export async function removeWant(paper: Paper): Promise<void> {
   await applyChanges({ papers: [{ ...paper, deleted: true, updated_at: nowIso() }] })
 }
 
+/** Another live type already answers to this name (its name or a former name). */
+async function typeNameTaken(name: string, except?: string): Promise<boolean> {
+  const key = normalizeTypeName(name)
+  const types = await db.types.filter((t) => !t.deleted && t.id !== except).toArray()
+  return types.some((t) => normalizeTypeName(t.name) === key || t.aliases.some((a) => normalizeTypeName(a) === key))
+}
+
 /** Renaming keeps the old name as an alias, so Markdown using it still lands on this type. */
-export async function saveType(type: HighlightType, patch: { name?: string; color?: string }): Promise<void> {
+export async function saveType(type: HighlightType, patch: { name?: string; color?: string }): Promise<'done' | 'taken'> {
   const next: HighlightType = { ...type, updated_at: nowIso() }
   const name = patch.name?.trim()
   if (name && name !== type.name) {
+    if (await typeNameTaken(name, type.id)) return 'taken'
     next.aliases = [...new Set([...type.aliases, type.name])]
     next.name = name
   }
   if (patch.color) next.color = patch.color
   await applyChanges({ types: [next] })
+  return 'done'
+}
+
+/** A highlight type made by hand. It can be picked when adding a highlight, and Markdown can use its name. */
+export async function addType(name: string, color: string): Promise<'done' | 'taken' | 'empty'> {
+  const clean = name.trim()
+  if (!clean) return 'empty'
+  if (await typeNameTaken(clean)) return 'taken'
+  const order = (await db.types.toArray()).reduce((max, t) => Math.max(max, t.order + 1), 0)
+  await applyChanges({ types: [{ id: newId('type'), name: clean, color, builtin: false, aliases: [], order, updated_at: nowIso() }] })
+  return 'done'
+}
+
+/** How many live highlights use a type. */
+export async function typeUse(typeId: string): Promise<number> {
+  return db.blocks.filter((b) => !b.deleted && b.type_id === typeId).count()
+}
+
+/** Only a type made by hand or by an import, and only when no highlight uses it (the page checks). */
+export async function deleteType(type: HighlightType): Promise<void> {
+  if (type.builtin || (await typeUse(type.id)) > 0) return
+  await applyChanges({ types: [{ ...type, deleted: true, updated_at: nowIso() }] })
+}
+
+// ── Readings ──
+// A reading worked out from an import has no row until it is named or removed; the row then
+// takes the same id, so the same change made on two devices merges into one reading.
+
+function rowOf(r: ReadingView, now: string): Reading {
+  return r.row ? { ...r.row } : { id: r.id, paper_id: r.paper_id, date: r.date, title: r.title, created_at: r.created_at, updated_at: now }
+}
+
+export async function saveReadingTitle(r: ReadingView, title: string): Promise<void> {
+  const now = nowIso()
+  const { deleted: _gone, ...row } = rowOf(r, now)
+  await applyChanges({ readings: [{ ...row, title: title.trim(), updated_at: now }] })
+}
+
+/** "+ 新的一次阅读": an empty reading dated today. Returns its id. */
+export async function addReading(paperId: string): Promise<string> {
+  const now = nowIso()
+  const id = newId('reading')
+  await applyChanges({ readings: [{ id, paper_id: paperId, date: todayLocal(), title: '', created_at: now, updated_at: now }] })
+  return id
+}
+
+/** Only for an empty reading (the page checks). Nothing in it is touched. */
+export async function removeReading(r: ReadingView): Promise<void> {
+  const now = nowIso()
+  await applyChanges({ readings: [{ ...rowOf(r, now), deleted: true, updated_at: now }] })
+}
+
+/** After importing: put this import into an existing reading, or (null) back into a reading of its own. */
+export async function setImportReading(entryId: string, readingId: string | null): Promise<void> {
+  const entry = await db.imports.get(entryId)
+  if (!entry) return
+  const next: ImportEntry = { ...entry, updated_at: nowIso() }
+  if (readingId && readingId !== readingIdOfImport(entry.id)) next.reading_id = readingId
+  else delete next.reading_id
+  await applyChanges({ imports: [next] })
 }

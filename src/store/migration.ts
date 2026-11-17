@@ -103,3 +103,30 @@ export async function lastMigrationReport(): Promise<MigrationReport | null> {
 export async function currentBoardCheck(): Promise<BoardCheck> {
   return checkBoards(await snapshot())
 }
+
+// ── Readings (第 N 次阅读) ──
+// The move to readings rewrites nothing: past readings are worked out from the imports.
+// Still, the first time this version opens on a device that has papers, a full backup of
+// the device is kept, as it was just before. Taken once; a device without papers records
+// that there was nothing to keep.
+
+const READINGS_BACKUP_KEY = 'backup-before-readings'
+
+export async function backupBeforeReadings(): Promise<void> {
+  try {
+    if (await db.device.get(READINGS_BACKUP_KEY)) return
+    const hasPapers = (await db.papers.filter((p) => !p.deleted).count()) > 0
+    await db.device.put({ key: READINGS_BACKUP_KEY, value: hasPapers ? await exportAll() : null })
+  } catch {
+    // tried again next time the app opens
+  }
+}
+
+export async function readingsBackup(): Promise<BackupFile | null> {
+  return ((await db.device.get(READINGS_BACKUP_KEY))?.value as BackupFile | null | undefined) ?? null
+}
+
+/** Keeps the "already done" mark, so it is not taken again. */
+export async function deleteReadingsBackup(): Promise<void> {
+  await db.device.put({ key: READINGS_BACKUP_KEY, value: null })
+}

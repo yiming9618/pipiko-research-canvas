@@ -14,6 +14,7 @@ doi: 10.xxxx/xxxxx
 category: Living media
 keywords: 关键词1, 关键词2, 同义词
 date: 2026-11-11
+reading_title: 这次阅读的小标题（可选，不需要就删掉这一行）
 ---
 
 ## 一句话总结
@@ -60,13 +61,14 @@ board: 画板名称（可选，不确定就删掉这一行）
 （下次准备继续的事情）
 `
 
-const PAPER_RULES = `请把我们刚才关于这篇论文的讨论，整理成下面这个固定格式的 Markdown，只输出 Markdown 本身。
+const paperRules = (typeNames: string[]) => `请把我们刚才关于这篇论文的讨论，整理成下面这个固定格式的 Markdown，只输出 Markdown 本身。
 
 规则：
 - date 写内容发生的日期（今天），格式 YYYY-MM-DD。
-- "## 重点：" 后面写类型名，可以有多块，同一类型也可以出现多次。类型名从这里选：${BUILTIN_TYPES.map((t) => t.name).join('、')}。
+- "## 重点：" 后面写类型名，可以有多块，同一类型也可以出现多次。类型名从这里选：${typeNames.join('、')}。
 - 没有内容的标题整块删掉，不要写"暂无"。
 - 引用其他论文时写成 (作者, 年份)。
+- reading_title 是可选的：我说了这次阅读叫什么（例如"原文精读""Paper Sharing 反馈"）就照写，没说就删掉这一行。
 - 不要改动标题文字和 frontmatter 的字段名。
 
 `
@@ -85,7 +87,9 @@ const RESEARCH_RULES = `请把我们刚才的讨论，整理成下面这个固�
 `
 
 /** What the copy buttons put on the clipboard: short rules for the AI + the template. */
-export const PAPER_PROMPT = PAPER_RULES + PAPER_TEMPLATE
+export const PAPER_PROMPT = paperRules(BUILTIN_TYPES.map((t) => t.name)) + PAPER_TEMPLATE
+/** The same, listing the highlight types as they are named on this device now. */
+export const paperPrompt = (typeNames: string[]) => paperRules(typeNames.length > 0 ? typeNames : BUILTIN_TYPES.map((t) => t.name)) + PAPER_TEMPLATE
 export const RESEARCH_PROMPT = RESEARCH_RULES + RESEARCH_TEMPLATE
 
 function hintLines(template: string): Set<string> {

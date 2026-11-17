@@ -4479,3 +4479,143 @@ body.is-pointer-dragging {
   min-height: var(--tap);
   max-width: 220px;
 }
+
+/* ── paper page: readings (第 N 次阅读) ────────────── */
+
+.readings {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.reading {
+  border-top: 1px solid var(--line);
+  padding-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.reading-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.reading-toggle {
+  min-height: var(--tap);
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 4px 0 0;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 2px;
+  font-size: 16px;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.reading-toggle .icon {
+  margin-right: 6px;
+  color: var(--text-soft);
+  transition: transform var(--fast) ease;
+}
+
+.reading-toggle[aria-expanded='false'] .icon {
+  transform: rotate(-90deg);
+}
+
+.reading-number {
+  font-weight: 700;
+}
+
+.reading-title {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.reading-date {
+  color: var(--text-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.reading-toggle .group-count {
+  margin-left: 10px;
+}
+
+.reading.is-current .reading-number {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 5px;
+}
+
+.reading-title-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.reading-title-form .field {
+  flex: 1 1 220px;
+}
+
+.reading-title-form input {
+  width: 100%;
+}
+
+.reading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.reading-empty {
+  margin: 0;
+}
+
+.add-reading {
+  align-self: flex-start;
+}
+
+.rail-reading {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-soft);
+}
+
+@media print {
+  .print-reading > h2 {
+    break-after: avoid;
+  }
+}
+
+/* ── settings: making highlight types ── */
+
+.icon-btn-space {
+  width: var(--tap);
+  flex: none;
+}
+
+.type-new select {
+  width: 96px;
+}
+
+.reading-choice {
+  align-items: flex-end;
+}
+
+.reading-choice .field {
+  flex: 1 1 240px;
+}
+
+.reading-choice select {
+  min-height: var(--tap);
+  width: 100%;
+}

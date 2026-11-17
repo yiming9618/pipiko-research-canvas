@@ -202,10 +202,13 @@ for (const size of sizes) {
   await page.locator('.paper-row', { hasText: 'Living Media Interfaces' }).click()
   await page.getByRole('heading', { name: 'Living Media Interfaces', level: 1 }).waitFor()
   check(`${tag} 基础默认折叠`, !(await page.locator('.basics').evaluate((el) => el.open)))
-  check(`${tag} 重点区块 4 个（含未知类型）`, (await page.locator('section.block').count()) === 4)
-  check(`${tag} 理解栏 2 条 AI 整理`, (await page.locator('.source[data-source=ai]').count()) === 2)
+  // two imports of the same paper = two readings; the latest is open
+  const heads = page.locator('.reading-toggle')
+  check(`${tag} 两次导入 = 两次阅读，日期是 11/1 和 12/3`, (await heads.count()) === 2 && /-11-01/.test(await heads.nth(0).innerText()) && /-12-03/.test(await heads.nth(1).innerText()), (await heads.allInnerTexts()).join(' / '))
+  check(`${tag} 理解栏显示最新一次的 AI 整理`, (await page.locator('.rail .source[data-source=ai]').count()) === 1)
+  await heads.nth(0).click()
+  check(`${tag} 两次都展开后，重点区块 4 个（含未知类型）`, (await page.locator('section.block').count()) === 4)
   check(`${tag} 被引用于：写着引用它的画板，可点`, (await page.locator('.cited a').first().getAttribute('href')).startsWith('#/board/'))
-  check(`${tag} 读过 2 次：11/1、12/3`, await page.getByText('读过 2 次：11/1、12/3').isVisible())
 
   // layout: rail beside on wide, below on phone
   const pos = await page.evaluate(() => {

@@ -10,7 +10,7 @@ import { Toaster } from './ui/toast'
 import { DiscussionPage, DiscussionsPage } from './views/discussions/DiscussionsPage'
 import { initSync } from './sync/controller'
 import { initLookups } from './store/lookup'
-import { ensureBoards } from './store/migration'
+import { backupBeforeReadings, ensureBoards } from './store/migration'
 
 function currentRoute(): string {
   return window.location.hash.replace(/^#/, '') || '/'
@@ -26,7 +26,8 @@ export default function App() {
     }
     window.addEventListener('hashchange', onChange)
     // boards first, then sync: what this device has is in place before anything arrives
-    void ensureBoards().then(() => initSync())
+    // the backup before readings is taken before sync too, so it holds this device as it was
+    void ensureBoards().then(() => backupBeforeReadings()).then(() => initSync())
     initLookups()
     return () => window.removeEventListener('hashchange', onChange)
   }, [])

@@ -1,4 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks'
+import { paperReadings } from '../../domain/readings'
 import { useEffect, useMemo, useState } from 'react'
 import type { HighlightType, Paper } from '../../domain/types'
 import { db } from '../../store/db'
@@ -50,6 +51,8 @@ export function LibraryList({ activeId, onDragOut, onCollapse }: ListProps) {
   const imports = useLiveQuery(() =>
     db.imports.filter((e) => e.kind === 'paper' && !e.undone && !e.deleted).toArray(),
   )
+  const readingRows = useLiveQuery(() => db.readings.toArray())
+  const notes = useLiveQuery(() => db.comments.filter((c) => !c.deleted).toArray())
 
   const [tab, setTab] = useState<'read' | 'want'>(() => remember('lib.tab', 'read'))
   const [typeFilter, setTypeFilter] = useState<string | null>(null)
@@ -72,15 +75,20 @@ export function LibraryList({ activeId, onDragOut, onCollapse }: ListProps) {
     return map
   }, [blocks, typeById])
 
+  /** paper id → how many readings it has (the same count as on its page). */
   const readCount = useMemo(() => {
-    const map = new Map<string, Set<string>>()
-    for (const e of imports ?? []) {
-      if (!e.paper_id) continue
-      if (!map.has(e.paper_id)) map.set(e.paper_id, new Set())
-      map.get(e.paper_id)!.add(e.date)
+    const group = <T extends { paper_id?: string }>(rows: T[] | undefined) => {
+      const m = new Map<string, T[]>()
+      for (const r of rows ?? []) if (r.paper_id) m.set(r.paper_id, [...(m.get(r.paper_id) ?? []), r])
+      return m
+    }
+    const [byImports, byRows, byBlocks, byNotes] = [group(imports), group(readingRows), group(blocks), group(notes)]
+    const map = new Map<string, number>()
+    for (const p of papers ?? []) {
+      map.set(p.id, paperReadings({ paper: p, imports: byImports.get(p.id) ?? [], readings: byRows.get(p.id) ?? [], blocks: byBlocks.get(p.id) ?? [], comments: byNotes.get(p.id) ?? [] }).list.length)
     }
     return map
-  }, [imports])
+  }, [papers, imports, readingRows, blocks, notes])
 
   const read = (papers ?? []).filter((p) => p.status === 'read')
   const want = (papers ?? []).filter((p) => p.status === 'want')
@@ -221,7 +229,7 @@ export function LibraryList({ activeId, onDragOut, onCollapse }: ListProps) {
                   <ul className="paper-list">
                     {list.map((p) => {
                       const dots = typesOfPaper.get(p.id) ?? []
-                      const times = readCount.get(p.id)?.size ?? 0
+                      const times = readCount.get(p.id) ?? 0
                       const meta = [
                         p.authors[0] ? p.authors[0] + (p.authors.length > 1 ? ' 等' : '') : '',
                         p.year ?? '',

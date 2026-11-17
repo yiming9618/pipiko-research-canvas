@@ -13,6 +13,9 @@ const SOURCE_LABEL: Record<CommentSource, string> = { ai: 'AI 整理', me: '我�
 
 interface RailProps {
   paperId: string
+  /** The reading shown, and where a new note goes. `many`: the paper has more than one reading. */
+  reading: { id: string; label: string; many: boolean } | null
+  readingOf: (item: { import_id?: string; reading_id?: string }) => string
   /** Short names of the paper's live highlight cards (id → "研究方法", "研究方法 2"). */
   cardName: Map<string, string>
   /** The selected card: only its notes are shown, and a new note is about it. */
@@ -21,7 +24,7 @@ interface RailProps {
   onShowAll: () => void
 }
 
-export function CommentRail({ paperId, cardName, selected, onSelectCard, onShowAll }: RailProps) {
+export function CommentRail({ paperId, reading, readingOf, cardName, selected, onSelectCard, onShowAll }: RailProps) {
   const comments = useLiveQuery(
     () => db.comments.where('paper_id').equals(paperId).filter((c) => !c.deleted).toArray(),
     [paperId],
@@ -37,14 +40,14 @@ export function CommentRail({ paperId, cardName, selected, onSelectCard, onShowA
   const fileRef = useRef<HTMLInputElement>(null)
 
   const when = (c: Comment) => c.created_at ?? c.updated_at
-  const all = [...(comments ?? [])].sort((a, b) => (a.date === b.date ? (when(a) < when(b) ? 1 : -1) : a.date < b.date ? 1 : -1))
+  const all = [...(comments ?? [])].filter((c) => !reading || readingOf(c) === reading.id).sort((a, b) => (a.date === b.date ? (when(a) < when(b) ? 1 : -1) : a.date < b.date ? 1 : -1))
   // a note whose card is gone counts as about the whole paper
   const sorted = selected ? all.filter((c) => c.block_id === selected) : all
   const about = selected ? cardName.get(selected) : undefined
 
   const submit = async () => {
     if (text.trim() === '') return
-    await addComment(paperId, text, selected ?? undefined)
+    await addComment(paperId, text, selected ?? undefined, reading?.id)
     setText('')
   }
 
@@ -52,7 +55,7 @@ export function CommentRail({ paperId, cardName, selected, onSelectCard, onShowA
     if (!file) return
     setError('')
     try {
-      await addImageComment(paperId, await fileToImage(file), selected ?? undefined)
+      await addImageComment(paperId, await fileToImage(file), selected ?? undefined, reading?.id)
     } catch (err) {
       setError(err instanceof Error ? err.message : '图片没有加上，请再试一次')
     } finally {
@@ -64,6 +67,7 @@ export function CommentRail({ paperId, cardName, selected, onSelectCard, onShowA
     <aside className="rail" aria-labelledby="rail-title">
       <div className="rail-head">
         <h2 id="rail-title">我的理解</h2>
+        {reading?.many && <p className="rail-reading">{reading.label}</p>}
         {about && (
           <p className="rail-scope">
             只看「{about}」
@@ -81,7 +85,7 @@ export function CommentRail({ paperId, cardName, selected, onSelectCard, onShowA
             className="edit-input"
             rows={3}
             value={text}
-            placeholder={about ? `关于「${about}」写一条理解…` : '对整篇论文写一条理解…'}
+            placeholder={about ? `关于「${about}」写一条理解…` : reading?.many ? '对这次阅读写一条理解…' : '对整篇论文写一条理解…'}
             onChange={(e) => setText(e.target.value)}
           />
         </label>
@@ -109,7 +113,7 @@ export function CommentRail({ paperId, cardName, selected, onSelectCard, onShowA
         )}
       </div>
 
-      {comments && sorted.length === 0 && <p className="empty">{about ? '这张重点卡片还没有理解，在上面写下第一条。' : '还没有理解。'}</p>}
+      {comments && sorted.length === 0 && <p className="empty">{about ? '这张重点卡片还没有理解，在上面写下第一条。' : reading?.many ? '这次阅读还没有理解。' : '还没有理解。'}</p>}
       <ul className="rail-list">
         {sorted.map((c) => (
           <CommentItem

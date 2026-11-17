@@ -46,7 +46,7 @@ describe('导出给 AI', () => {
 
   it('一篇已读论文：信息、一句话总结、重点区块（用改过的文字）', () => {
     const blocks: PaperBlock[] = [
-      { id: 'b1', paper_id: 'a', type_id: 't1', heading: '重点：研究方法', body_md: '原文', edited_md: '我改过的方法', order: 0, updated_at: T },
+      { id: 'b1', paper_id: 'a', type_id: 't1', heading: '重点：研究方法', body_md: '没改过的那一版', edited_md: '我改过的方法', order: 0, updated_at: T },
       { id: 'b2', paper_id: 'a', type_id: 't1', heading: '', body_md: '已删除', order: 1, updated_at: T, deleted: true },
     ]
     const md = buildExport(base({
@@ -67,7 +67,7 @@ describe('导出给 AI', () => {
     expect(md).toContain('一句话总结：a 的一句话总结')
     expect(md).toContain('**重点 · 研究方法**')
     expect(md).toContain('我改过的方法')
-    expect(md).not.toContain('原文')
+    expect(md).not.toContain('没改过的那一版')
     expect(md).not.toContain('已删除')
   })
 

@@ -203,3 +203,17 @@ describe('论文', () => {
     expect(paper(`---\ntype: paper\ntitle: t\ndoi: https://doi.org/10.1145/ABC.\n---\n`).doi).toBe('10.1145/abc')
   })
 })
+
+describe('reading_title（这次阅读的小标题）', () => {
+  const md = (line: string) => `---\ntype: paper\ntitle: 论文标题\n${line}\n---\n\n## 重点：研究方法\n研究内容：xxxxxxx\n`
+  it('写了就读出来', () => {
+    const p = parseMarkdown(md('reading_title: Paper Sharing 反馈'), { today: '2026-11-17', kindHint: 'paper' })
+    expect(p.kind === 'paper' && p.reading_title).toBe('Paper Sharing 反馈')
+  })
+  it('没写、或者留着模板里的提示文字，都当作没有', () => {
+    for (const line of ['', 'reading_title: 这次阅读的小标题（可选，不需要就删掉这一行）']) {
+      const p = parseMarkdown(md(line), { today: '2026-11-17', kindHint: 'paper' })
+      expect(p.kind === 'paper' && p.reading_title).toBe('')
+    }
+  })
+})

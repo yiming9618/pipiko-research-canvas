@@ -31,6 +31,13 @@ export interface ImportEntry extends Synced {
   wants_created?: string[]
   /** Research imports: existing AI-mentioned entries that gained this record as a source. */
   mentions_added?: string[]
+  /** Paper imports: `reading_title:` from the Markdown, the title of the reading this import starts. */
+  reading_title?: string
+  /**
+   * Paper imports: the reading this import was added to, chosen after importing.
+   * Absent = the import is a reading of its own (id `readingIdOfImport(id)`).
+   */
+  reading_id?: string
 }
 
 export interface PaperImportEffects {
@@ -107,6 +114,8 @@ export interface PaperBlock extends Synced {
   /** Absent for blocks added by hand. */
   import_id?: string
   order: number
+  /** The reading it was added to by hand. Absent: the reading of its import, or the first reading. See domain/readings.ts. */
+  reading_id?: string
 }
 
 export interface HighlightType extends Synced {
@@ -135,6 +144,23 @@ export interface Comment extends Synced {
   block_id?: string
   /** The moment it was written. Only on notes written here; imported and older notes have just `date`. */
   created_at?: ISODateTime
+  /** The reading it was written in. Absent: the reading of its import, or the first reading. See domain/readings.ts. */
+  reading_id?: string
+}
+
+/**
+ * One reading of a paper (第 N 次阅读). Its highlight blocks and notes point at it.
+ * Readings of past imports are not stored: they are worked out from the import
+ * (see domain/readings.ts). A row is stored only once one is named, made by hand or
+ * removed, always under the id it is worked out with, so two devices doing the same
+ * thing write the same row and merging gives one reading, never two.
+ */
+export interface Reading extends Synced {
+  paper_id: string
+  date: ISODate
+  /** Optional, e.g. "原文精读". */
+  title: string
+  created_at: ISODateTime
 }
 
 export interface ResearchRecord extends Synced {
@@ -307,6 +333,7 @@ export interface Tables {
   boards: Board
   boardUse: BoardUse
   fields: Field
+  readings: Reading
 }
 
 export type TableName = keyof Tables

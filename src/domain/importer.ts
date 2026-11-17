@@ -445,6 +445,7 @@ function importPaper(
 
   entry.paper_id = paper.id
   entry.effects = effects
+  if (parsed.reading_title) entry.reading_title = parsed.reading_title
 
   const highlights = blocks.filter((b) => b.type_id !== null).length
   const parts: string[] = []

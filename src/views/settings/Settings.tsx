@@ -9,8 +9,8 @@ import { downloadJson, exportAll, importBackup, parseBackup } from '../../store/
 import { db, todayLocal } from '../../store/db'
 import { sampleImports } from '../../dev/samples'
 import { runImport } from '../../store/actions'
-import { saveType } from '../../store/paperActions'
-import { backupBeforeBoards, currentBoardCheck, deleteBackupBeforeBoards, ensureBoards, lastMigrationReport } from '../../store/migration'
+import { addType, deleteType, saveType } from '../../store/paperActions'
+import { backupBeforeBoards, currentBoardCheck, deleteBackupBeforeBoards, deleteReadingsBackup, ensureBoards, lastMigrationReport, readingsBackup } from '../../store/migration'
 import { IconChevron, IconClose, IconDownload, IconUndo, IconUpload } from '../../ui/icons'
 import { TopNav } from '../../ui/TopNav'
 import { useUndo } from '../../ui/useUndo'
@@ -29,7 +29,6 @@ const COLORS: [string, string][] = [
   ['gray', '灰'],
 ]
 
-/** The preset types are fixed; types that came in from Markdown can be renamed and recoloured. */
 /** A settings section whose body can be folded away. Closed when the page opens; nothing is hidden from the data. */
 function Fold({ id, title, count, open: startOpen = false, children }: { id: string; title: string; count?: number; open?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(startOpen)
@@ -52,47 +51,116 @@ function Fold({ id, title, count, open: startOpen = false, children }: { id: str
 
 function TypeEditor() {
   const types = useLiveQuery(() => db.types.filter((t) => !t.deleted).sortBy('order'))
+  const used = useLiveQuery(async () => {
+    const count = new Map<string, number>()
+    for (const b of await db.blocks.filter((b) => !b.deleted && !!b.type_id).toArray()) count.set(b.type_id!, (count.get(b.type_id!) ?? 0) + 1)
+    return count
+  })
+  const [name, setName] = useState('')
+  const [color, setColor] = useState('default')
+  const [note, setNote] = useState('')
+  const say = (text: string) => {
+    setNote(text)
+    setTimeout(() => setNote(''), 3200)
+  }
   return (
-    <Fold id="s-types" title="重点类型">
-      <p className="section-note">预设的 8 种是固定的。导入时新出现的类型可以在这里改名、改颜色，已有的区块会一起更新。</p>
+    <Fold id="s-types" title="重点类型" count={types?.length}>
+      <p className="section-note">
+        论文页"加一个重点"和导入时都从这里选类型。可以新建、改名、改颜色；改名后已有的重点一起更新，旧名字写的 Markdown 也照样认得。没有被用到的自建类型可以删除，预设的 8 种不能删。
+      </p>
       <ul className="type-list">
-        {types?.map((t: HighlightType) => (
-          <li key={t.id} className="type-row" data-color={t.color}>
-            <span className="dot" aria-hidden="true" />
-            {t.builtin ? (
-              <span className="type-name">{t.name}</span>
-            ) : (
-              <>
-                <label className="type-name">
-                  <span className="sr-only">类型名称</span>
-                  <input
-                    key={t.name}
-                    defaultValue={t.name}
-                    onBlur={(e) => {
-                      const name = e.target.value.trim()
-                      if (name && name !== t.name) void saveType(t, { name })
-                      else e.target.value = t.name
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') e.currentTarget.blur()
-                    }}
-                  />
-                </label>
-                <label>
-                  <span className="sr-only">颜色</span>
-                  <select value={t.color} onChange={(e) => void saveType(t, { color: e.target.value })}>
-                    {COLORS.map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </>
-            )}
-          </li>
-        ))}
+        {types?.map((t: HighlightType) => {
+          const n = used?.get(t.id) ?? 0
+          return (
+            <li key={t.id} className="type-row" data-color={t.color}>
+              <span className="dot" aria-hidden="true" />
+              <label className="type-name">
+                <span className="sr-only">类型名称</span>
+                <input
+                  key={t.name}
+                  defaultValue={t.name}
+                  onBlur={(e) => {
+                    const next = e.target.value.trim()
+                    if (!next || next === t.name) {
+                      e.target.value = t.name
+                      return
+                    }
+                    void saveType(t, { name: next }).then((r) => {
+                      if (r === 'taken') {
+                        e.target.value = t.name
+                        say(`已经有叫「${next}」的类型了`)
+                      }
+                    })
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.currentTarget.blur()
+                  }}
+                />
+              </label>
+              <span className="field-count">{n} 个</span>
+              <label>
+                <span className="sr-only">{t.name} 的颜色</span>
+                <select value={t.color} onChange={(e) => void saveType(t, { color: e.target.value })}>
+                  {COLORS.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {!t.builtin && n === 0 ? (
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label={`删除类型：${t.name}`}
+                  onClick={() => {
+                    if (window.confirm(`删除重点类型「${t.name}」？现在没有重点用到它。`)) void deleteType(t)
+                  }}
+                >
+                  <IconClose />
+                </button>
+              ) : (
+                <span className="icon-btn-space" aria-hidden="true" />
+              )}
+            </li>
+          )
+        })}
       </ul>
+      <form
+        className="box-new type-new"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void addType(name, color).then((out) => {
+            if (out === 'taken') say('已经有同名的类型了')
+            else if (out === 'done') {
+              setName('')
+              setColor('default')
+              say(`已新建「${name.trim()}」`)
+            }
+          })
+        }}
+      >
+        <label>
+          <span className="sr-only">新类型的名字</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="新类型的名字" maxLength={30} />
+        </label>
+        <label>
+          <span className="sr-only">新类型的颜色</span>
+          <select value={color} onChange={(e) => setColor(e.target.value)}>
+            {COLORS.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="submit" className="btn" disabled={!name.trim()}>
+          新建
+        </button>
+      </form>
+      <p className="status-line" role="status">
+        {note}
+      </p>
     </Fold>
   )
 }
@@ -293,6 +361,34 @@ function Samples() {
   )
 }
 
+/** The backup kept the first time the version with readings (第 N 次阅读) opened on this device. */
+function BeforeReadings() {
+  const backup = useLiveQuery(() => readingsBackup())
+  if (!backup) return null
+  return (
+    <div className="before-boards">
+      <p className="section-note">
+        论文页加上"阅读次数"之前，这台设备自动存了一份全量备份（{clock(backup.exported_at)}）。这次升级没有改写任何旧内容；备份只存在这台设备里，不参与同步。
+      </p>
+      <div className="row-actions">
+        <button type="button" className="btn" onClick={() => downloadJson(backup, `加阅读次数前-${backup.exported_at.slice(0, 10)}`)}>
+          <IconDownload />
+          下载这份备份
+        </button>
+        <button
+          type="button"
+          className="btn btn-quiet"
+          onClick={() => {
+            if (window.confirm('删除这份备份？建议先下载一份再删。')) void deleteReadingsBackup()
+          }}
+        >
+          不需要了，删除
+        </button>
+      </div>
+    </div>
+  )
+}
+
 /** The backup taken automatically just before the move to subject boards, and how that move went. */
 function BeforeBoards() {
   const state = useLiveQuery(async () => ({
@@ -460,6 +556,7 @@ export function Settings({ section }: { section?: string }) {
           {backup?.text}
         </p>
         <BeforeBoards />
+        <BeforeReadings />
       </section>
 
       <SyncSection />

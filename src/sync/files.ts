@@ -42,6 +42,10 @@ export function fileOf(table: TableName, e: Synced): string {
       return 'data/board-list.json'
     case 'fields':
       return 'data/fields.json'
+    case 'readings':
+      // A file of its own, not the paper's: an app that has not updated yet rewrites the
+      // paper's file without the tables it does not know, but leaves unknown files alone.
+      return `data/readings/${x.paper_id}.json`
   }
 }
 
@@ -60,6 +64,7 @@ const TABLES_BY_PREFIX: [string, TableName[]][] = [
   ['data/cards/', ['records', 'cards']],
   ['data/board-list.json', ['boards', 'boardUse']],
   ['data/fields.json', ['fields']],
+  ['data/readings/', ['readings']],
 ]
 
 export function tablesIn(path: string): TableName[] {

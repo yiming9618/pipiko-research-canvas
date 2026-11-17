@@ -24,6 +24,7 @@ const KNOWN_KEYS = new Set([
   'activities',
   'papers',
   'board',
+  'reading_title',
 ])
 
 /** Line endings, BOM, and an outer ```markdown fence the AI may have added. */

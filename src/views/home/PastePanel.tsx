@@ -3,9 +3,11 @@ import { useEffect, useRef, useState } from 'react'
 import { boardHref, mostRecentBoard, sortBoards } from '../../domain/boards'
 import type { BoardTarget } from '../../domain/importer'
 import { db } from '../../store/db'
-import { PAPER_PROMPT, RESEARCH_PROMPT } from '../../domain/templates'
+import { paperPrompt, RESEARCH_PROMPT } from '../../domain/templates'
 import type { ImportEntry, ImportKind } from '../../domain/types'
 import { confirmSameAsWant, runImport } from '../../store/actions'
+import { paperReadings, readingIdOfImport, readingLabel } from '../../domain/readings'
+import { setImportReading } from '../../store/paperActions'
 import { copyText } from '../../ui/clipboard'
 import { IconCheck, IconCopy, IconUndo } from '../../ui/icons'
 import { useUndo } from '../../ui/useUndo'
@@ -30,6 +32,8 @@ export function PastePanel() {
   const [kind, setKind] = useState<ImportKind>('research')
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
+  // loaded ahead, so copying happens right on the tap (Safari only allows it then)
+  const typeNames = useLiveQuery(async () => (await db.types.filter((t) => !t.deleted).sortBy('order')).map((t) => t.name))
   const [result, setResult] = useState<Result | null>(null)
   const [copied, setCopied] = useState<'ok' | 'fail' | null>(null)
   // which board a research record goes onto: '' = the one used most recently
@@ -106,7 +110,7 @@ export function PastePanel() {
   }
 
   const copyTemplate = async () => {
-    const ok = await copyText(kind === 'paper' ? PAPER_PROMPT : RESEARCH_PROMPT)
+    const ok = await copyText(kind === 'paper' ? paperPrompt(typeNames ?? []) : RESEARCH_PROMPT)
     setCopied(ok ? 'ok' : 'fail')
     setTimeout(() => setCopied(null), 2400)
   }
@@ -212,6 +216,7 @@ export function PastePanel() {
             )}
           </div>
         )}
+        {result?.entry && !result.plain && result.entry.kind === 'paper' && result.entry.paper_id && <ReadingChoice entry={result.entry} />}
         {result?.needsBoard?.inTrash && (
           <TrashedBoardQuestion
             name={result.needsBoard.name}
@@ -337,6 +342,53 @@ function TrashedBoardQuestion({
           取消导入
         </button>
       </div>
+    </div>
+  )
+}
+
+/**
+ * After a paper import: this import is a new reading (default), or goes into one the paper
+ * already has. Only shown when the paper has another reading to add it to.
+ */
+function ReadingChoice({ entry }: { entry: ImportEntry }) {
+  const paperId = entry.paper_id!
+  const state = useLiveQuery(async () => {
+    const [paper, readings, imports, blocks, comments] = await Promise.all([
+      db.papers.get(paperId),
+      db.readings.where('paper_id').equals(paperId).toArray(),
+      db.imports.filter((e) => e.paper_id === paperId).toArray(),
+      db.blocks.where('paper_id').equals(paperId).toArray(),
+      db.comments.where('paper_id').equals(paperId).toArray(),
+    ])
+    const now = imports.find((e) => e.id === entry.id)
+    if (!paper || !now || now.undone || now.deleted) return null
+    // the paper's readings as they would be without this import
+    const restBlocks = blocks.filter((b) => b.import_id !== entry.id && !b.deleted)
+    const restComments = comments.filter((c) => c.import_id !== entry.id && !c.deleted)
+    const pr = paperReadings({ paper, readings, imports: imports.filter((e) => e.id !== entry.id), blocks: restBlocks, comments: restComments })
+    // a reading worth adding to: it has something in it, or was made or named by hand
+    const others = pr.list.filter((r) => r.row || r.import_ids.length > 0 || [...restBlocks, ...restComments].some((x) => pr.readingOf(x) === r.id))
+    return { others, chosen: now.reading_id && others.some((r) => r.id === now.reading_id) ? now.reading_id : '' }
+  }, [entry.id, paperId])
+  if (!state || state.others.length === 0) return null
+  return (
+    <div className="result is-question reading-choice">
+      <label className="field">
+        <span>这次导入的重点和理解放在</span>
+        <select value={state.chosen} onChange={(e) => void setImportReading(entry.id, e.target.value || null)}>
+          <option value="">新的一次阅读</option>
+          {state.others
+            .filter((r) => r.id !== readingIdOfImport(entry.id))
+            .map((r) => (
+              <option key={r.id} value={r.id}>
+                添加到 {readingLabel(r)}
+              </option>
+            ))}
+        </select>
+      </label>
+      <a className="btn" href={`#/paper/${encodeURIComponent(paperId)}`}>
+        打开论文
+      </a>
     </div>
   )
 }

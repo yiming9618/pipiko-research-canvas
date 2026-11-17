@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Asset, Card, ImportEntry, Pile, ResearchRecord, Setting } from '../domain/types'
+import type { Asset, Card, ImportEntry, Pile, Reading, ResearchRecord, Setting } from '../domain/types'
 import { syncOnce } from './engine'
 import { explainFailure } from './github'
 import { MemoryLocal, MemoryRemote } from './memory'
@@ -291,5 +291,31 @@ describe('删除了的条目不再下载它的文件', () => {
     expect(read.some((p) => p.startsWith('raw/') || p.startsWith('assets/'))).toBe(false)
     expect(fresh.get<ImportEntry>('imports', 'i1')?.deleted).toBe(true)
     expect(fresh.get<Asset>('assets', 'pic')?.deleted).toBe(true)
+  })
+})
+
+describe('阅读次数（第 N 次阅读）的同步', () => {
+  const reading = (title: string, t: number): Reading => ({ id: 'r-imp_1', paper_id: 'paper_1', date: '2026-11-05', title, created_at: at(0), updated_at: at(t) })
+
+  it('两台设备各自给同一次过去的阅读起小标题：数据仓库和两台设备上都只有一条，较新的留下', async () => {
+    const { remote, phone, ipad, sync } = setup()
+    phone.write('readings', reading('原文精读', 1))
+    ipad.write('readings', reading('研究逻辑整理', 2))
+    await sync(phone)
+    await sync(ipad)
+    await sync(phone)
+    const file = JSON.parse(remote.files.get('data/readings/paper_1.json')!)
+    expect(file.tables.readings).toHaveLength(1)
+    expect(file.tables.readings[0].title).toBe('研究逻辑整理')
+    expect(phone.get<Reading>('readings', 'r-imp_1')?.title).toBe('研究逻辑整理')
+    expect(ipad.get<Reading>('readings', 'r-imp_1')?.title).toBe('研究逻辑整理')
+  })
+
+  it('阅读存在自己的文件里，论文的文件被（还没更新的设备）改写时不受影响', async () => {
+    const { remote, phone, sync } = setup()
+    phone.write('readings', reading('原文精读', 1))
+    await sync(phone)
+    expect([...remote.files.keys()].filter((p) => p.startsWith('data/papers/'))).toEqual([])
+    expect(remote.files.has('data/readings/paper_1.json')).toBe(true)
   })
 })

@@ -13,13 +13,15 @@ import { toast } from '../../ui/toast'
 /** "导出" on a paper's page: Markdown (copied) or PDF (the system's print dialog, "Save as PDF"). */
 export function PaperExport({ paper }: { paper: Paper }) {
   const data = useLiveQuery(async (): Promise<PaperExportData> => {
-    const [blocks, types, comments, fields] = await Promise.all([
+    const [blocks, types, comments, fields, readings, imports] = await Promise.all([
       db.blocks.where('paper_id').equals(paper.id).toArray(),
       db.types.toArray(),
       db.comments.where('paper_id').equals(paper.id).toArray(),
       db.fields.toArray(),
+      db.readings.where('paper_id').equals(paper.id).toArray(),
+      db.imports.filter((e) => e.paper_id === paper.id).toArray(),
     ])
-    return { paper, blocks, types, comments, fields }
+    return { paper, blocks, types, comments, fields, readings, imports }
   }, [paper])
   const assets = useLiveQuery(async () => {
     const ids = (data?.comments ?? []).filter((c) => !c.deleted && c.asset_id).map((c) => c.asset_id!)
@@ -128,7 +130,7 @@ export function PaperExport({ paper }: { paper: Paper }) {
 
 /** The printed paper: one clean page flow, for reading on screen or on paper. */
 function PaperSheet({ data, assets }: { data: PaperExportData; assets?: Map<string, { mime: string; data: string; w: number; h: number }> }) {
-  const { paper, highlights, others, understanding, field, cardName, aboutCard } = paperParts(data)
+  const { paper, readings, field, cardName, aboutCard } = paperParts(data)
   const rows: [string, string][] = [
     ['作者', paper.authors.join(', ')],
     ['年份', paper.year === null ? '' : String(paper.year)],
@@ -157,27 +159,23 @@ function PaperSheet({ data, assets }: { data: PaperExportData; assets?: Map<stri
           <Markdown text={paper.basics_md} />
         </section>
       )}
-      {highlights.length > 0 && (
-        <section>
-          <h2>重点</h2>
-          {highlights.map((h) => (
+      {readings.filter((r) => r.reading.row || r.highlights.length + r.others.length + r.understanding.length > 0).map((r) => (
+        <section key={r.reading.id} className="print-reading">
+          <h2>{r.label}</h2>
+          {r.highlights.map((h) => (
             <div key={h.block.id} className="print-block" data-color={h.type?.color ?? 'default'}>
               <h3>{cardName.get(h.block.id) ?? h.type?.name ?? '重点'}</h3>
               <Markdown text={h.text} />
             </div>
           ))}
-        </section>
-      )}
-      {others.map((o) => (
-        <section key={o.block.id}>
-          <h2>{o.heading}</h2>
-          <Markdown text={o.text} />
-        </section>
-      ))}
-      {understanding.length > 0 && (
-        <section>
-          <h2>我的理解</h2>
-          {understanding.map((c) => {
+          {r.others.map((o) => (
+            <div key={o.block.id} className="print-block" data-color="default">
+              <h3>{o.heading}</h3>
+              <Markdown text={o.text} />
+            </div>
+          ))}
+          {r.understanding.length > 0 && <h3>我的理解</h3>}
+          {r.understanding.map((c) => {
             const img = c.asset_id ? assets?.get(c.asset_id) : undefined
             return (
               <div key={c.id} className="print-note">
@@ -191,7 +189,7 @@ function PaperSheet({ data, assets }: { data: PaperExportData; assets?: Map<stri
             )
           })}
         </section>
-      )}
+      ))}
       <footer className="print-foot">研究笔记本 · 导出于 {todayLocal()}</footer>
     </article>
   )

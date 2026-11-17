@@ -21,6 +21,7 @@ export const TABLE_NAMES: TableName[] = [
   'boards',
   'boardUse',
   'fields',
+  'readings',
 ]
 
 /** Local-only: which entries changed on this device and still need to be sent when sync is connected. */
@@ -65,6 +66,8 @@ db.version(3).stores({ device: 'key' })
 db.version(4).stores({ discussions: 'id, updated_at', discussionItems: 'id, updated_at, discussion_id' })
 // Subject boards, fields. Only new tables: nothing that exists is rewritten by this upgrade.
 db.version(5).stores({ boards: 'id, updated_at', boardUse: 'id, updated_at', fields: 'id, updated_at' })
+// Readings of a paper. Only a new table: nothing that exists is rewritten.
+db.version(6).stores({ readings: 'id, updated_at, paper_id' })
 
 /** Called after every change made on this device (not for changes that arrive through sync). */
 export const localChangeListeners = new Set<() => void>()
