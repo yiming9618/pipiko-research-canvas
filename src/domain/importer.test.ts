@@ -257,7 +257,7 @@ date: 2026-12-03
       doi: '10.1145/aaa',
       url: 'https://example.org/p',
     })
-    expect(out.message).toContain('从"想看"移到"已读"')
+    expect(out.message).toContain('1 篇论文已合并（之前只记了信息）')
     expect(out.entry?.effects?.want_before).toEqual({
       title: 'living media interfaces',
       url: 'https://example.org/p',
@@ -282,7 +282,7 @@ describe('研究记录提到的论文、相似标题', () => {
     expect(wants[0]).toMatchObject({ added_by: 'ai', lookup: 'pending', title: '' })
     expect(wants[0].mentioned_in).toEqual([{ date: '2026-11-10', record_id: tables.records[0].id }])
     expect(out.entry?.wants_created).toHaveLength(2)
-    expect(out.message).toContain('提到的 2 篇论文库里没有，已加进"想看"')
+    expect(out.message).toContain('提到的 2 篇论文库里没有，已加进论文库（标为“AI 提到”）')
   })
 
   it('第二份记录又提到同一篇：不重复添加，只多记一个来源', () => {

@@ -5049,3 +5049,78 @@ button.paper-row {
     padding-bottom: max(20px, env(safe-area-inset-bottom));
   }
 }
+
+/* ── pictures inside notes ── */
+
+.md .note-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 8px 0;
+  border-radius: var(--radius-sm);
+}
+
+.note-img-missing {
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+/* ── one library: progress filter, AI-mentioned papers, sort with direction ── */
+
+.lib-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ai-chip {
+  font-size: 13px;
+}
+
+.ai-chip[aria-pressed='true'] {
+  background: var(--line-soft);
+  border-color: var(--text-soft);
+  color: var(--text);
+}
+
+.ai-tag {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--text-soft);
+}
+
+.paper-row-why {
+  font-size: 13px;
+  color: var(--text-soft);
+  padding-right: 36px;
+  overflow-wrap: anywhere;
+}
+
+.sort-pick {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sort-pick select {
+  width: auto;
+  min-width: 132px;
+  font-size: 14px;
+}
+
+.sort-dir {
+  font-size: 14px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.note-image-btn {
+  margin-right: auto;
+}

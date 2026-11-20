@@ -3,6 +3,8 @@
 
 import { fieldOfPaper } from './migrate'
 import { paperReadings, readingLabel, type ReadingView } from './readings'
+import { isEdited } from './library'
+import { withImagePlaceholders } from './noteImages'
 import type { Comment, CommentSource, Field, HighlightType, ImportEntry, Paper, PaperBlock, Reading } from './types'
 
 export interface PaperExportData {
@@ -101,26 +103,26 @@ export function exportPaper(data: PaperExportData): string {
   info.push(`- 领域：${field}`)
   const value = paperValue(paper, data.types)
   if (value.length > 0) info.push(`- 参考价值：${value.join('、')}`)
-  if (paper.status === 'want') info.push('- 状态：想看（还没读）')
+  if (!isEdited(paper, data.blocks, data.comments)) info.push('- 状态：未编辑（还没有阅读笔记）')
   if (paper.why) info.push(`- 为什么想看：${paper.why}`)
   out.push(...info, '')
 
   if (paper.one_liner.trim()) out.push('## 一句话总结', '', paper.one_liner.trim(), '')
-  if (paper.basics_md.trim()) out.push('## 基础', '', paper.basics_md.trim(), '')
+  if (paper.basics_md.trim()) out.push('## 基础', '', withImagePlaceholders(paper.basics_md.trim()), '')
 
   for (const r of readings) {
     const empty = r.highlights.length + r.others.length + r.understanding.length === 0
     if (empty && !r.reading.row) continue // the first reading the page shows for a paper with nothing in it yet
     out.push(`## ${r.label}`, '')
     if (empty) out.push('（这次还没有内容）', '')
-    for (const h of r.highlights) out.push(`### ${cardName.get(h.block.id) ?? h.type?.name ?? '重点'}`, '', h.text, '')
-    for (const o of r.others) out.push(`### ${o.heading}`, '', o.text, '')
+    for (const h of r.highlights) out.push(`### ${cardName.get(h.block.id) ?? h.type?.name ?? '重点'}`, '', withImagePlaceholders(h.text), '')
+    for (const o of r.others) out.push(`### ${o.heading}`, '', withImagePlaceholders(o.text), '')
     if (r.understanding.length > 0) {
       out.push('### 我的理解', '')
       for (const c of r.understanding) {
         const about = aboutCard(c)
         out.push(`#### ${noteStamp(c)} · ${SOURCE_LABEL[c.source]}${about ? ` · 对应重点：${about}` : ''}`, '')
-        out.push(c.source === 'drawing' || (!c.text.trim() && c.asset_id) ? `[手绘图片：${c.date}]` : c.text.trim(), '')
+        out.push(c.source === 'drawing' || (!c.text.trim() && c.asset_id) ? `[手绘图片：${c.date}]` : withImagePlaceholders(c.text.trim()), '')
       }
     }
   }

@@ -3,24 +3,27 @@ import { paperReadings } from '../../domain/readings'
 import { useEffect, useMemo, useState } from 'react'
 import type { HighlightType, Paper } from '../../domain/types'
 import { db } from '../../store/db'
-import { markRead, retryLookup } from '../../store/paperActions'
-import { shortDate } from '../../domain/importer'
-import { AddPaperForm, EditPaperForm } from './PaperForm'
+import { AddPaperForm } from './PaperForm'
 import { AddToDiscussion } from '../discussions/AddToDiscussion'
 import { POINTER_DROP, watchPointerDrag, type PointerDrop } from '../../ui/pointerDrag'
 import { fieldOfPaper } from '../../domain/migrate'
 import { showRestoredMark } from '../../domain/trash'
 import { setPaperField } from '../../store/fieldActions'
 import { toast } from '../../ui/toast'
-import { boardHref } from '../../domain/boards'
-import { recordBoardId } from '../../domain/migrate'
-import { IconCheck, IconChevron, IconEdit, IconFold, IconGrip, IconPlus } from '../../ui/icons'
-import { isReadingNow, lastRead, PAPER_SORTS, sortPapers, type PaperSort } from '../../domain/library'
+import { IconCheck, IconChevron, IconFold, IconGrip, IconPlus } from '../../ui/icons'
+import { isAiMention, isReadingNow, lastRead, PAPER_SORTS, sortPapers, type PaperSort, type SortDirection } from '../../domain/library'
 import { BoxMark, useBoxMarks, ValueMarks } from '../../ui/marks'
 
 const UNCATEGORISED = '未分类'
 /** The filter chip for 参考价值 "Full". */
 const FULL = '__full'
+
+type Progress = 'all' | 'edited' | 'unedited'
+const PROGRESS: [Progress, string][] = [
+  ['all', '全部'],
+  ['edited', '已编辑'],
+  ['unedited', '未编辑'],
+]
 
 function remember<T>(key: string, fallback: T): T {
   try {
@@ -49,7 +52,7 @@ interface ListProps {
 
 export function LibraryList({ activeId, onDragOut, onCollapse }: ListProps) {
   const papers = useLiveQuery(() => db.papers.filter((p) => !p.deleted && !p.trashed_at).toArray())
-  const blocks = useLiveQuery(() => db.blocks.filter((b) => !b.deleted && b.type_id !== null).toArray())
+  const blocks = useLiveQuery(() => db.blocks.filter((b) => !b.deleted).toArray())
   const types = useLiveQuery(() => db.types.filter((t) => !t.deleted).toArray())
   const fields = useLiveQuery(() => db.fields.toArray())
   const imports = useLiveQuery(() =>
@@ -59,11 +62,15 @@ export function LibraryList({ activeId, onDragOut, onCollapse }: ListProps) {
   const uses = useLiveQuery(async () => new Map((await db.paperUse.toArray()).map((u) => [u.id, u])))
   const boxMarks = useBoxMarks()
   const [sort, setSort] = useState<PaperSort>(() => remember<PaperSort>('lib.sort', 'read'))
+  const [direction, setDirection] = useState<SortDirection>(() => remember<SortDirection>('lib.sort.dir', 'desc'))
+  /** 全部 / 已编辑 / 未编辑 */
+  const [progress, setProgress] = useState<Progress>(() => remember<Progress>('lib.progress', 'all'))
+  /** Papers the AI named in a research record, with nothing written for them yet: hidden unless asked for. */
+  const [showAi, setShowAi] = useState<boolean>(() => remember('lib.ai', false))
   /** 选择: tick several papers and put them in a discussion box together. */
   const [picking, setPicking] = useState<string[] | null>(null)
   const notes = useLiveQuery(() => db.comments.filter((c) => !c.deleted).toArray())
 
-  const [tab, setTab] = useState<'read' | 'want'>(() => remember('lib.tab', 'read'))
   const [typeFilter, setTypeFilter] = useState<string | null>(null)
   const [closed, setClosed] = useState<string[]>(() => remember('lib.closed', []))
   const [adding, setAdding] = useState(false)
@@ -87,8 +94,21 @@ export function LibraryList({ activeId, onDragOut, onCollapse }: ListProps) {
     return map
   }, [papers, imports, readingRows, blocks, notes])
 
-  const read = (papers ?? []).filter((p) => p.status === 'read')
-  const want = (papers ?? []).filter((p) => p.status === 'want')
+  // one library: whether a paper has reading notes is worked out from them, not stored
+  const edited = useMemo(() => {
+    const has = new Set<string>()
+    for (const b of blocks ?? []) has.add(b.paper_id)
+    for (const c of notes ?? []) if (c.text.trim() || c.asset_id) has.add(c.paper_id)
+    for (const p of papers ?? []) if (p.one_liner.trim() || p.basics_md.trim()) has.add(p.id)
+    return has
+  }, [papers, blocks, notes])
+  const all = papers ?? []
+  const aiCount = all.filter((p) => isAiMention(p, edited.has(p.id))).length
+  const read = all.filter(
+    (p) =>
+      (showAi || !isAiMention(p, edited.has(p.id))) &&
+      (progress === 'all' || (progress === 'edited') === edited.has(p.id)),
+  )
 
   // the filter is by 参考价值 (chosen by hand), not by the highlights inside
   const usedTypes = useMemo(() => {
@@ -113,8 +133,8 @@ export function LibraryList({ activeId, onDragOut, onCollapse }: ListProps) {
     }
     return [...map.entries()]
       .sort(([a, x], [b, y]) => (a === '' ? 1 : b === '' ? -1 : x.name.localeCompare(y.name, 'zh')))
-      .map(([id, g]) => ({ id, name: g.name, papers: sortPapers(g.papers, sort, uses ?? new Map(), readAt) }))
-  }, [shown, fields, typeFilter, sort, uses, imports, readCount])
+      .map(([id, g]) => ({ id, name: g.name, papers: sortPapers(g.papers, sort, uses ?? new Map(), readAt, direction) }))
+  }, [shown, fields, typeFilter, sort, direction, uses, imports, readCount])
 
   // A paper let go on a field's heading moves into that field (see ui/pointerDrag).
   useEffect(() => {
@@ -132,11 +152,6 @@ export function LibraryList({ activeId, onDragOut, onCollapse }: ListProps) {
     document.addEventListener(POINTER_DROP, onDropped)
     return () => document.removeEventListener(POINTER_DROP, onDropped)
   }, [papers, fields])
-
-  const pickTab = (next: 'read' | 'want') => {
-    setTab(next)
-    store('lib.tab', next)
-  }
 
   const toggleGroup = (name: string) => {
     const next = closed.includes(name) ? closed.filter((n) => n !== name) : [...closed, name]
@@ -162,25 +177,44 @@ export function LibraryList({ activeId, onDragOut, onCollapse }: ListProps) {
       </div>
 
       {adding && (
-        <AddPaperForm
-          defaultStatus={tab}
-          onDone={(status) => {
-            setAdding(false)
-            pickTab(status)
-          }}
-        />
+        <AddPaperForm onDone={() => setAdding(false)} />
       )}
 
-      <div className="seg" role="group" aria-label="筛选">
-        <button type="button" className="btn" aria-pressed={tab === 'read'} onClick={() => pickTab('read')}>
-          已读 · {read.length}
-        </button>
-        <button type="button" className="btn" aria-pressed={tab === 'want'} onClick={() => pickTab('want')}>
-          想看 · {want.length}
-        </button>
-      </div>
+      {all.length > 0 && (
+        <div className="lib-filter">
+          <div className="seg seg-small" role="group" aria-label="阅读进度">
+            {PROGRESS.map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className="btn"
+                aria-pressed={progress === value}
+                onClick={() => {
+                  setProgress(value)
+                  store('lib.progress', value)
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {aiCount > 0 && (
+            <button
+              type="button"
+              className="chip ai-chip"
+              aria-pressed={showAi}
+              onClick={() => {
+                setShowAi(!showAi)
+                store('lib.ai', !showAi)
+              }}
+            >
+              显示 AI 提到的（{aiCount}）
+            </button>
+          )}
+        </div>
+      )}
 
-      {tab === 'read' && (
+      {(
         <>
           {(usedTypes.length > 0 || anyFull) && (
             <div className="chips" role="group" aria-label="按参考价值筛选">
@@ -210,21 +244,37 @@ export function LibraryList({ activeId, onDragOut, onCollapse }: ListProps) {
 
           {read.length > 0 && (
             <div className="lib-tools">
-              <div className="seg seg-small" role="group" aria-label="排序">
-                {PAPER_SORTS.map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    className="btn"
-                    aria-pressed={sort === value}
-                    onClick={() => {
+              <div className="sort-pick">
+                <label>
+                  <span className="sr-only">排序方式</span>
+                  <select
+                    value={sort}
+                    onChange={(e) => {
+                      const value = e.target.value as PaperSort
                       setSort(value)
                       store('lib.sort', value)
                     }}
                   >
-                    {label}
-                  </button>
-                ))}
+                    {PAPER_SORTS.map(([value, label]) => (
+                      <option key={value} value={value}>
+                        按{label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="btn btn-quiet sort-dir"
+                  aria-label={direction === 'desc' ? '现在是新的在前，点一下改成旧的在前' : '现在是旧的在前，点一下改成新的在前'}
+                  title={direction === 'desc' ? '新的在前' : '旧的在前'}
+                  onClick={() => {
+                    const next = direction === 'desc' ? 'asc' : 'desc'
+                    setDirection(next)
+                    store('lib.sort.dir', next)
+                  }}
+                >
+                  {direction === 'desc' ? '↓ 新的在前' : '↑ 旧的在前'}
+                </button>
               </div>
               {!picking && (
                 <button type="button" className="btn btn-quiet" onClick={() => setPicking([])}>
@@ -234,8 +284,11 @@ export function LibraryList({ activeId, onDragOut, onCollapse }: ListProps) {
             </div>
           )}
 
-          {papers && read.length === 0 && (
+          {papers && all.length === 0 && (
             <p className="empty">还没有论文。在主页粘贴一篇论文的 Markdown，或点上面的“添加论文”。</p>
+          )}
+          {papers && all.length > 0 && read.length === 0 && (
+            <p className="empty">{progress === 'edited' ? '还没有写过笔记的论文。' : progress === 'unedited' ? '每篇论文都已经有笔记了。' : '论文都是 AI 提到的，点上面的“显示 AI 提到的”就能看到。'}</p>
           )}
           {typeFilter && shown.length === 0 && read.length > 0 && (
             <p className="empty">还没有标了这项参考价值的论文。在论文页的“编辑信息”里标。</p>
@@ -269,19 +322,22 @@ export function LibraryList({ activeId, onDragOut, onCollapse }: ListProps) {
                         times > 1 ? `读过 ${times} 次` : '',
                       ].filter(Boolean)
                       const now = isReadingNow(uses?.get(p.id))
+                      const ai = isAiMention(p, edited.has(p.id))
                       const ticked = picking?.includes(p.id) ?? false
                       const body = (
                         <>
                           <span className="paper-row-title">
                             {showRestoredMark(p, papers ?? []) && <span className="restored-mark">【恢复】</span>}
-                            {p.title || '（没有标题）'}
+                            {p.title || p.doi || p.url || '（没有标题）'}
                           </span>
-                          {(meta.length > 0 || now) && (
+                          {(meta.length > 0 || now || ai) && (
                             <span className="paper-row-line">
                               <span className="paper-row-meta">{meta.join(' · ')}</span>
+                              {ai && <span className="ai-tag">AI 提到</span>}
                               {now && <span className="reading-tag">在读</span>}
                             </span>
                           )}
+                          {p.why && !edited.has(p.id) && <span className="paper-row-why">{p.why}</span>}
                           <span className="paper-row-marks">
                             <ValueMarks paper={p} types={types ?? []} />
                             <BoxMark names={boxMarks.get(`paper:${p.id}`)} />
@@ -318,7 +374,7 @@ export function LibraryList({ activeId, onDragOut, onCollapse }: ListProps) {
                               if (e.pointerType === 'mouse' && e.button !== 0) return
                               // from the grip a finger can pull in any direction; elsewhere on the row, sideways only
                               const grip = !!(e.target as HTMLElement).closest('[data-grip]')
-                              watchPointerDrag(e, { type: 'paper', id: p.id }, p.title || '（没有标题）', onDragOut, grip)
+                              watchPointerDrag(e, { type: 'paper', id: p.id }, p.title || p.doi || '（没有标题）', onDragOut, grip)
                             }}
                           >
                             <span className="row-grip" data-grip aria-hidden="true">
@@ -358,118 +414,6 @@ export function LibraryList({ activeId, onDragOut, onCollapse }: ListProps) {
           )}
         </>
       )}
-
-      {tab === 'want' && <WantList items={want} boxMarks={boxMarks} />}
     </div>
-  )
-}
-
-/** Where an AI-mentioned entry came from: the days whose record named it. */
-function Sources({ paper }: { paper: Paper }) {
-  const list = paper.mentioned_in ?? []
-  // each source is a research record; the link goes to the board that record is on
-  const where = useLiveQuery(async () => {
-    const records = await db.records.bulkGet(list.map((m) => m.record_id))
-    return new Map(records.filter((r) => !!r).map((r) => [r!.id, boardHref(recordBoardId(r!))]))
-  }, [list.map((m) => m.record_id).join(',')])
-  if (list.length === 0) return null
-  return (
-    <span className="want-meta">
-      提到它的记录：
-      {list.map((m, i) => (
-        <span key={m.record_id}>
-          {i > 0 && '、'}
-          <a href={where?.get(m.record_id) ?? '#/boards'}>{shortDate(m.date)}</a>
-        </span>
-      ))}
-    </span>
-  )
-}
-
-function WantItem({ paper, boxMarks }: { paper: Paper; boxMarks?: Map<string, string[]> }) {
-  const [editing, setEditing] = useState(false)
-  const name = paper.title || paper.doi || paper.url
-  const link = paper.url || (paper.doi ? `https://doi.org/${paper.doi}` : '')
-  const meta = [
-    paper.authors[0] ? paper.authors[0] + (paper.authors.length > 1 ? ' 等' : '') : '',
-    paper.year ?? '',
-    paper.venue,
-  ].filter(Boolean)
-
-  if (editing) {
-    return (
-      <li className="want-item is-editing">
-        <EditPaperForm paper={paper} onDone={() => setEditing(false)} />
-      </li>
-    )
-  }
-  return (
-    <li className="want-item">
-      <div className="want-text">
-        {link ? (
-          <a className="want-title" href={link} target="_blank" rel="noopener noreferrer">
-            {name}
-          </a>
-        ) : (
-          <span className="want-title">{name}</span>
-        )}
-        {meta.length > 0 && <span className="want-meta">{meta.join(' · ')}</span>}
-        <BoxMark names={boxMarks?.get(`paper:${paper.id}`)} />
-        {paper.lookup === 'pending' && <span className="want-meta">文献信息还没查到，联网后会自动补上</span>}
-        {paper.lookup === 'failed' && (
-          <span className="want-meta">
-            按这个 DOI 没查到文献信息。
-            <button type="button" className="link-btn" onClick={() => void retryLookup(paper)}>
-              再查一次
-            </button>
-          </span>
-        )}
-        {paper.why && <span className="want-why">{paper.why}</span>}
-        <Sources paper={paper} />
-      </div>
-      <div className="want-actions">
-        <button type="button" className="btn btn-quiet" aria-label={`标为已读：${name}`} onClick={() => void markRead(paper)}>
-          标为已读
-        </button>
-        <AddToDiscussion refs={[{ type: 'paper', id: paper.id }]} iconOnly label={`放进讨论框：${name}`} />
-        <button type="button" className="icon-btn" aria-label={`编辑：${name}`} onClick={() => setEditing(true)}>
-          <IconEdit />
-        </button>
-      </div>
-    </li>
-  )
-}
-
-function WantList({ items, boxMarks }: { items: Paper[]; boxMarks: Map<string, string[]> }) {
-  const [aiOpen, setAiOpen] = useState(false)
-  const newest = (list: Paper[]) => [...list].sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
-  const mine = newest(items.filter((p) => p.added_by !== 'ai'))
-  const ai = newest(items.filter((p) => p.added_by === 'ai'))
-
-  return (
-    <>
-      {items.length === 0 && <p className="empty">想看的论文记在这里。导入它的 Markdown 后会自动移到“已读”。</p>}
-      <ul className="want-list">
-        {mine.map((p) => (
-          <WantItem key={p.id} paper={p} boxMarks={boxMarks} />
-        ))}
-      </ul>
-      {ai.length > 0 && (
-        <section className="group">
-          <button type="button" className="group-head" aria-expanded={aiOpen} onClick={() => setAiOpen(!aiOpen)}>
-            <span>AI 提到的</span>
-            <span className="group-count">{ai.length}</span>
-            <IconChevron />
-          </button>
-          {aiOpen && (
-            <ul className="want-list">
-              {ai.map((p) => (
-                <WantItem key={p.id} paper={p} boxMarks={boxMarks} />
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
-    </>
   )
 }

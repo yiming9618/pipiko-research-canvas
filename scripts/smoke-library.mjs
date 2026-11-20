@@ -148,37 +148,34 @@ for (const size of sizes) {
     )
   const noSideScroll = () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
 
-  // ── a "想看" entry that the import should pick up
+  // ── a paper with only its details, that the import should pick up
   await page.goto(`${url}#/library`)
-  await page.getByRole('button', { name: /想看/ }).click()
   await page.getByRole('button', { name: '添加论文' }).click()
   await page.getByLabel('标题').fill('mold as material')
   await page.getByLabel('链接').fill('https://example.org/mold')
   await page.getByRole('button', { name: '保存' }).click()
-  await page.getByRole('button', { name: '想看 · 1' }).waitFor()
-  check(`${tag} 添加论文：只填标题和链接，放进想看`, true)
+  await page.locator('.paper-row:visible', { hasText: 'mold as material' }).waitFor()
+  check(`${tag} 添加论文：只填标题和链接，进论文库`, true)
 
   // ── imports
   await page.goto(url)
   for (const [md, expect] of [
     [PAPER_A, /1 篇论文放进论文库/],
     [PAPER_A_AGAIN, /1 篇论文已合并/],
-    [PAPER_B, /从"想看"移到"已读"/],
+    [PAPER_B, /1 篇论文已合并（之前只记了信息）/],
     [RESEARCH, /生成了 1 张卡片/],
   ]) {
     await page.locator('.md-input').fill(md)
     await page.getByRole('button', { name: '放进去' }).click()
     await page.getByText(expect).waitFor()
   }
-  check(`${tag} 导入：新论文、合并、想看转已读`, true)
+  check(`${tag} 导入：新论文、合并，只记了信息的那篇按标题并进来`, true)
 
   // ── library list
   await page.getByRole('link', { name: '论文库' }).click()
-  await page.getByRole('button', { name: '已读 · 2' }).click()
-  await page.getByRole('button', { name: '想看 · 0' }).waitFor()
   await page.getByRole('button', { name: /Living media/ }).waitFor()
   await page.getByRole('button', { name: /霉菌/ }).waitFor()
-  check(`${tag} 已读 2 / 想看 0，按 category 分组`, true)
+  check(`${tag} 一个论文库（两篇，没有重复），按 category 分组`, (await page.locator('.paper-row:visible').count()) === 2)
 
   // colour dots are the paper's 参考价值, chosen by hand: none yet, so no dots and no filter (see smoke-connect)
   const dots = await page.locator('.paper-row', { hasText: 'Living Media Interfaces' }).locator('.dot').count()
@@ -248,6 +245,9 @@ for (const size of sizes) {
   await page.getByRole('button', { name: '加上' }).click()
   await page.locator('.source[data-source=me]').waitFor()
   await page.locator('.rail input[type=file]').setInputFiles({ name: 'sketch.png', mimeType: 'image/png', buffer: PNG })
+  // the picture goes into the note being written; on its own, it is posted as a 手绘 note
+  await page.waitForFunction(() => document.querySelector('.rail textarea')?.value.includes('asset:'))
+  await page.locator('.rail').getByRole('button', { name: '加上' }).click()
   await page.locator('.comment-image img').waitFor()
   check(`${tag} 加评论 + 上传图片（我写的 / 手绘）`, (await page.locator('.source[data-source=drawing]').count()) === 1)
 
@@ -275,59 +275,57 @@ for (const size of sizes) {
 
   // ── adding papers by hand; Crossref is replaced by a stand-in
   await page.goto(`${url}#/library`)
-  const add = async (fields, status) => {
+  const add = async (fields) => {
     await page.getByRole('button', { name: '添加论文' }).click()
     for (const [label, value] of Object.entries(fields)) await page.getByLabel(label, { exact: true }).fill(value)
-    if (status) await page.locator('.paper-form .seg').getByRole('button', { name: status, exact: true }).click()
     await page.getByRole('button', { name: '保存' }).click()
   }
-  await page.getByRole('button', { name: /^想看/ }).click()
-  await add({ DOI: 'https://doi.org/10.1145/TEST.found', '为什么想看（可以不填）': '老师提到过' }, '想看')
-  const found = page.locator('.want-item', { hasText: 'Crossref 查到的标题' })
+  const libRow = (text) => page.locator('.paper-row:visible', { hasText: text })
+  const openRow = async (text) => {
+    await page.goto(`${url}#/library`)
+    await libRow(text).first().click()
+    await page.locator('.paper-head h1').waitFor()
+  }
+  await add({ DOI: 'https://doi.org/10.1145/TEST.found', '为什么想看（可以不填，不算阅读笔记）': '老师提到过' })
+  const found = libRow('Crossref 查到的标题')
   await found.waitFor()
   check(`${tag} 只填 DOI：标题、作者、年份、期刊自动补全`, (await found.innerText()).includes('Ada Lovelace 等 · 2019 · 示例期刊'))
-  check(`${tag} “为什么想看”显示在条目下方`, await found.locator('.want-why', { hasText: '老师提到过' }).isVisible())
+  check(`${tag} “为什么想看”显示在条目下方`, await found.locator('.paper-row-why', { hasText: '老师提到过' }).isVisible())
 
-  await add({ DOI: '10.1145/test.missing' }, '想看')
-  await page.locator('.want-item', { hasText: '按这个 DOI 没查到' }).waitFor()
-  check(`${tag} 查不到时照样保存，并说明没查到`, true)
+  await add({ DOI: '10.1145/test.missing' })
+  await openRow('10.1145/test.missing')
+  await page.getByText('按这个 DOI 没查到').waitFor()
+  check(`${tag} 查不到时照样保存，论文页说明没查到，可以再查一次`, (await page.getByRole('button', { name: '再查一次' }).count()) === 1)
 
-  await add({ DOI: '10.1145/test.offline' }, '想看')
-  await page.locator('.want-item', { hasText: '联网后会自动补上' }).waitFor()
+  await page.goto(`${url}#/library`)
+  await add({ DOI: '10.1145/test.offline' })
+  await openRow('10.1145/test.offline')
+  await page.getByText('联网后会自动补上').waitFor()
   check(`${tag} 断网时照样保存，等联网再补`, true)
 
-  await add({ DOI: '10.1145/test.found' }, '想看')
+  await page.goto(`${url}#/library`)
+  await add({ DOI: '10.1145/test.found' })
   await page.getByText(/库里已经有这篇了/).waitFor()
   check(`${tag} 同一个 DOI 不会加两次`, true)
   await page.locator('.paper-form').getByRole('button', { name: '取消' }).click()
 
-  await found.getByRole('button', { name: /^编辑/ }).click()
+  await openRow('Crossref 查到的标题')
+  await page.getByRole('button', { name: '编辑信息' }).click()
   await page.getByLabel('为什么想看', { exact: true }).fill('改过的理由')
   await page.getByLabel('标题', { exact: true }).fill('我改的标题')
-  await page.getByRole('button', { name: '保存' }).click()
-  const edited = page.locator('.want-item', { hasText: '我改的标题' })
-  await edited.locator('.want-why', { hasText: '改过的理由' }).waitFor()
-  check(`${tag} 想看条目可以编辑标题和理由`, true)
-  check(`${tag} 想看列表：可点元素 ≥ 44px`, (await smallTargets()).length === 0, (await smallTargets()).join(', '))
-  check(`${tag} 想看列表：没有横向滚动`, await noSideScroll())
-  await page.screenshot({ path: `${out}/${size.name}-lib-4-want.png`, fullPage: true })
-
-  await edited.getByRole('button', { name: /^标为已读/ }).click()
-  await page.getByRole('button', { name: /^已读/ }).click()
-  await page.locator('.paper-row', { hasText: '我改的标题' }).click()
-  await page.getByRole('heading', { name: '我改的标题', level: 1 }).waitFor()
-  check(`${tag} 标为已读：移到已读，有自己的论文页`, true)
-  await page.getByRole('button', { name: '编辑信息' }).click()
   await page.getByLabel('期刊或会议').fill('手动填的会议')
   await page.getByRole('button', { name: '保存' }).click()
   await page.locator('.paper-meta', { hasText: '手动填的会议' }).waitFor()
-  check(`${tag} 论文页可以手动补作者、年份、期刊`, true)
-
+  check(`${tag} 论文页可以改标题、理由，手动补期刊`, true)
   await page.goto(`${url}#/library`)
-  await add({ 标题: '直接加成已读的论文' }, '已读')
-  await page.locator('.paper-row', { hasText: '直接加成已读的论文' }).click()
-  await page.getByRole('heading', { name: '直接加成已读的论文', level: 1 }).waitFor()
-  check(`${tag} 添加时选“已读”：得到一个空的论文页`, true)
+  await libRow('我改的标题').locator('.paper-row-why', { hasText: '改过的理由' }).waitFor()
+  check(`${tag} 论文库：可点元素 ≥ 44px`, (await smallTargets()).length === 0, (await smallTargets()).join(', '))
+  check(`${tag} 论文库：没有横向滚动`, await noSideScroll())
+  await page.screenshot({ path: `${out}/${size.name}-lib-4-unedited.png`, fullPage: true })
+
+  await add({ 标题: '直接加的论文' })
+  await openRow('直接加的论文')
+  check(`${tag} 手动加的论文有自己的论文页，带一个空的第 1 次阅读`, (await page.locator('.reading-toggle').count()) === 1)
   await page.screenshot({ path: `${out}/${size.name}-lib-5-empty-paper.png`, fullPage: true })
 
   // ── papers a research record mentions; similar titles
@@ -339,37 +337,36 @@ for (const size of sizes) {
   }
   await paste(
     '---\ntype: research\ndate: 2026-11-09\ntitle: 提到新论文的记录\npapers: 10.1145/test.ai\n---\n## 发现\n内容\n',
-    /提到的 1 篇论文库里没有，已加进"想看"/,
+    /提到的 1 篇论文库里没有，已加进论文库（标为“AI 提到”）/,
   )
-  check(`${tag} 记录里提到、库里没有的 DOI：结果里说明加进了想看`, true)
+  check(`${tag} 记录里提到、库里没有的 DOI：结果里说明加进了论文库`, true)
   await page.goto(`${url}#/library`)
-  await page.getByRole('button', { name: /^想看/ }).click()
-  const aiHead = page.getByRole('button', { name: /AI 提到的/ })
-  check(`${tag} “AI 提到的”单独一组，默认折叠`, (await aiHead.getAttribute('aria-expanded')) === 'false')
-  await aiHead.click()
-  const aiItem = page.locator('.want-item', { hasText: 'AI 提到的论文标题' })
+  check(`${tag} AI 提到的论文默认不显示`, (await libRow('AI 提到的论文标题').count()) === 0)
+  await page.getByRole('button', { name: /显示 AI 提到的/ }).click()
+  const aiItem = libRow('AI 提到的论文标题')
   await aiItem.waitFor()
-  check(`${tag} AI 提到的条目用 Crossref 补全了标题`, true)
-  await page.screenshot({ path: `${out}/${size.name}-lib-6-ai-want.png`, fullPage: true })
-  await aiItem.getByRole('link', { name: '11/9' }).click()
+  check(`${tag} 显示后带“AI 提到”，标题用 Crossref 补全了`, (await aiItem.locator('.ai-tag').count()) === 1)
+  await page.screenshot({ path: `${out}/${size.name}-lib-6-ai.png`, fullPage: true })
+  await aiItem.click()
+  await page.getByRole('link', { name: '11/9' }).click()
   await page.locator('.node.cover', { hasText: '提到新论文的记录' }).waitFor()
-  check(`${tag} 点来源跳到那份记录所在的画板`, true)
+  check(`${tag} 论文页上点来源，跳到那份记录所在的画板`, true)
 
   await page.goto(`${url}#/library`)
-  await add({ 标题: 'slow technology reflection draft' }, '想看')
-  await page.locator('.want-item', { hasText: 'slow technology reflection draft' }).waitFor()
+  await page.getByRole('button', { name: /显示 AI 提到的/ }).click()
+  await add({ 标题: 'slow technology reflection draft' })
+  await libRow('slow technology reflection draft').waitFor()
   await paste(
     '---\ntype: paper\ntitle: Slow Technology: Designing for Reflection\nyear: 2001\ndate: 2026-11-09\n---\n## 一句话总结\n总结\n',
-    /这是不是想看里的「slow technology reflection draft」/,
+    /这是不是论文库里只记了信息的「slow technology reflection draft」/,
   )
   check(`${tag} 相似标题：只是问，不自动合并`, true)
   await page.screenshot({ path: `${out}/${size.name}-lib-7-similar.png` })
   await page.getByRole('button', { name: '是，合并' }).click()
-  await page.getByText(/想看里的那一条已经并进这篇论文/).waitFor()
+  await page.getByText(/论文库里的那一条已经并进这篇论文/).waitFor()
   await page.goto(`${url}#/library`)
-  await page.getByRole('button', { name: /^想看/ }).click()
   await page.waitForTimeout(300)
-  check(`${tag} 确认后想看里的那条并进了论文`, (await page.locator('.want-item', { hasText: 'slow technology reflection draft' }).count()) === 0)
+  check(`${tag} 确认后那一条并进了论文`, (await libRow('slow technology reflection draft').count()) === 0 && (await libRow('Slow Technology').count()) === 1)
 
   check(`${tag} 没有报错`, errors.filter((e) => !e.includes('Failed to load resource')).length === 0, errors.join(' | '))
   await ctx.close()

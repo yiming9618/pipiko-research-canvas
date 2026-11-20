@@ -242,7 +242,7 @@ describe('撤销：AI 提到的想看、确认合并的想看', () => {
     const e = s.run(R('2026-11-10'), 'research')
     s.t.papers[0] = { ...s.t.papers[0], why: '想了解方法', touched: true }
     const u = s.undo(e.id)
-    expect(u.plan.impacts.join()).toContain('会保留在想看里')
+    expect(u.plan.impacts.join()).toContain('会保留在论文库里')
     u.commit()
     expect(s.live(s.t.papers)).toHaveLength(1)
     expect(s.t.papers[0].mentioned_in).toEqual([])
@@ -263,7 +263,7 @@ describe('撤销：AI 提到的想看、确认合并的想看', () => {
     const e = s.run(R('2026-11-10'), 'research')
     const entry = s.t.imports.find((x) => x.id === e.id)!
     const plan = planUndo(entry, { ...(s.t as UndoSnapshot), keptPaperIds: new Set([s.t.papers[0].id]) }, '2026-11-12T00:00:00.000Z')
-    expect(plan.impacts.join()).toContain('会保留在想看里')
+    expect(plan.impacts.join()).toContain('会保留在论文库里')
     expect(plan.changes.papers?.[0].deleted).toBeUndefined()
   })
 

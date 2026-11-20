@@ -51,7 +51,6 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   }
   const libraryTitles = async () => {
     await page.goto(`${url}#/library`)
-    await page.getByRole('button', { name: /^已读/ }).first().click()
     await page.waitForTimeout(300)
     return page.locator('.paper-row-title').allInnerTexts()
   }

@@ -43,7 +43,6 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   }
   const toLibrary = async () => {
     await page.goto(`${url}#/library`)
-    await page.getByRole('button', { name: /^已读/ }).first().click()
     await page.locator('.liblist .group-head').first().waitFor()
   }
 

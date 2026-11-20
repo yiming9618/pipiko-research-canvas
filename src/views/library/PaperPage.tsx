@@ -8,8 +8,10 @@ import { showRestoredMark } from '../../domain/trash'
 import { trashPaper } from '../../store/trashActions'
 import type { HighlightType, Paper, PaperBlock } from '../../domain/types'
 import { db } from '../../store/db'
-import { addBlock, addReading, deleteBlock, removeReading, saveBlockText, savePaperField, saveReadingTitle } from '../../store/paperActions'
+import { addBlock, addReading, deleteBlock, removeReading, retryLookup, saveBlockText, savePaperField, saveReadingTitle } from '../../store/paperActions'
+import { Sources } from './Sources'
 import { EditableText } from '../../ui/EditableText'
+import { ImageButton, useNoteImages } from '../../ui/NoteImages'
 import { IconBack, IconChevron, IconPlus, IconTrash } from '../../ui/icons'
 import { AddToDiscussion } from '../discussions/AddToDiscussion'
 import { CommentRail } from './CommentRail'
@@ -168,6 +170,15 @@ export function PaperPage({ id }: { id: string }) {
           </p>
           <FieldPicker paper={paper} />
           {paper.lookup === 'pending' && <p className="paper-meta">文献信息还没查到，联网后会自动补上</p>}
+          {paper.lookup === 'failed' && (
+            <p className="paper-meta">
+              按这个 DOI 没查到文献信息。
+              <button type="button" className="link-btn" onClick={() => void retryLookup(paper)}>
+                再查一次
+              </button>
+            </p>
+          )}
+          <Sources paper={paper} />
           {paper.why && <p className="want-why">{paper.why}</p>}
           {editingInfo ? (
             <EditPaperForm paper={paper} full onDone={() => setEditingInfo(false)} />
@@ -209,6 +220,7 @@ export function PaperPage({ id }: { id: string }) {
           <EditableText
             value={paper.basics_md}
             label="基础"
+            images
             placeholder="还没有基础部分，点一下写"
             onSave={(text) => savePaperField(paper, 'basics_md', text)}
           />
@@ -439,6 +451,7 @@ function BlockCard({ block, type, selected = false, onSelect }: { block: PaperBl
         label={`「${name}」这一块`}
         original={block.edited_md !== undefined ? block.body_md : undefined}
         onSave={(text) => saveBlockText(block, text)}
+        images
         onDelete={() => deleteBlock(block)}
         tapToEdit={!selectable}
         editRequest={request}
@@ -452,6 +465,8 @@ function AddBlock({ paper, types, readingId }: { paper: Paper; types: HighlightT
   const [open, setOpen] = useState(false)
   const [typeId, setTypeId] = useState('')
   const [text, setText] = useState('')
+  const area = useRef<HTMLTextAreaElement>(null)
+  const pics = useNoteImages(area, text, setText)
 
   if (!open) {
     return (
@@ -490,9 +505,15 @@ function AddBlock({ paper, types, readingId }: { paper: Paper; types: HighlightT
       </label>
       <label className="field">
         <span>内容</span>
-        <textarea className="edit-input" rows={4} value={text} onChange={(e) => setText(e.target.value)} autoFocus />
+        <textarea ref={area} className="edit-input" rows={4} value={text} onChange={(e) => setText(e.target.value)} autoFocus {...pics.textareaProps} />
       </label>
+      {pics.error && (
+        <p className="status-line is-error" role="alert">
+          {pics.error}
+        </p>
+      )}
       <div className="edit-actions">
+        <ImageButton busy={pics.busy} onFiles={(f) => void pics.add(f)} />
         <button type="submit" className="btn btn-small btn-dark" disabled={text.trim() === ''}>
           保存
         </button>

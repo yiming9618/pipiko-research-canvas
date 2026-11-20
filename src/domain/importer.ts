@@ -298,7 +298,7 @@ function importResearch(
   }
   if (created.length > 0) {
     entry.wants_created = created
-    entry.message += `；提到的 ${created.length} 篇论文库里没有，已加进"想看"`
+    entry.message += `；提到的 ${created.length} 篇论文库里没有，已加进论文库（标为“AI 提到”）`
   }
   if (mentioned.length > 0) entry.mentions_added = mentioned
   return {
@@ -450,7 +450,7 @@ function importPaper(
   const highlights = blocks.filter((b) => b.type_id !== null).length
   const parts: string[] = []
   if (!existing) parts.push('1 篇论文放进论文库')
-  else if (effects.want_before) parts.push('1 篇论文从"想看"移到"已读"')
+  else if (effects.want_before) parts.push('1 篇论文已合并（之前只记了信息）')
   else parts.push('1 篇论文已合并')
   if (highlights > 0) parts.push(`${existing ? '追加' : '生成'}了 ${highlights} 个重点区块`)
   if (comments.length > 0) parts.push('1 条理解')

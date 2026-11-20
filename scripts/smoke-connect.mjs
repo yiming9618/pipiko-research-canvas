@@ -69,7 +69,6 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   await library()
   await page.getByRole('button', { name: '添加论文' }).click()
   await page.getByLabel('标题').fill('丙论文')
-  await page.getByRole('button', { name: '已读' }).last().click()
   await page.getByRole('button', { name: '保存' }).click()
   await page.waitForTimeout(300)
   // into the same field, so all three are in one group (在读 comes first within a group)
@@ -111,7 +110,7 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
 
   // ════ sorting ════
   const pickSort = async (label) => {
-    await page.locator('.lib-tools').getByRole('button', { name: label }).click()
+    await page.locator('.sort-pick select').selectOption({ label: `按${label}` })
     await page.waitForTimeout(150)
   }
   // only 甲 stays 在读, so the order of the others shows
@@ -127,10 +126,10 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   check(`${tag} 收藏时间：加入论文库新的在前（在读的仍在最前）`, (await order()).join(',') === '甲论文,丙论文,乙论文', (await order()).join(','))
   await pickSort('最近阅读')
   check(`${tag} 最近阅读：最后一次实际编辑新的在前（在读的仍在最前）`, (await order()).join(',') === '甲论文,乙论文,丙论文', (await order()).join(','))
-  check(`${tag} 排序按钮 ≥ 44px`, await big(page.locator('.lib-tools .btn').first()))
+  check(`${tag} 排序选择 ≥ 44px`, await big(page.locator('.sort-pick select')))
   await page.reload()
   await page.locator('.paper-row:visible').first().waitFor()
-  check(`${tag} 记住选的排序`, (await page.locator('.lib-tools').getByRole('button', { name: '最近阅读' }).getAttribute('aria-pressed')) === 'true')
+  check(`${tag} 记住选的排序`, (await page.locator('.sort-pick select').inputValue()) === 'read')
 
   // ════ 参考价值 ════
   check(`${tag} 旧论文没有参考价值：行上没有色点，也没有筛选按钮`, (await page.locator('.paper-row:visible .dot').count()) === 0 && (await page.locator('.chips[aria-label="按参考价值筛选"]').count()) === 0)

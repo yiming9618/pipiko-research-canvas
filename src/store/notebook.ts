@@ -8,7 +8,7 @@ import { withoutTrash } from '../domain/trash'
 import { db } from './db'
 
 export async function loadNotebook(): Promise<NotebookData> {
-  const [papers, blocks, types, records, cards, boardItems, connectors, strokes, piles, boards, imports] = await Promise.all([
+  const [papers, blocks, types, records, cards, boardItems, connectors, strokes, piles, boards, imports, comments] = await Promise.all([
     db.papers.toArray(),
     db.blocks.toArray(),
     db.types.toArray(),
@@ -20,8 +20,9 @@ export async function loadNotebook(): Promise<NotebookData> {
     db.piles.toArray(),
     db.boards.toArray(),
     db.imports.toArray(),
+    db.comments.toArray(),
   ])
-  return withoutTrash({ papers, blocks, types, records, cards, boardItems, connectors, strokes, piles, boards, imports })
+  return withoutTrash({ papers, blocks, types, records, cards, boardItems, connectors, strokes, piles, boards, imports, comments })
 }
 
 export function useNotebook(): NotebookData | undefined {

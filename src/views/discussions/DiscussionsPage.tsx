@@ -149,7 +149,7 @@ function Title({ box }: { box: Discussion }) {
 /** One discussion box: what is in it, and "导出给 AI". */
 export function DiscussionPage({ id }: { id: string }) {
   const data = useLiveQuery(async () => {
-    const [box, items, papers, blocks, types, records, cards, boardItems, connectors, strokes, piles, imports, boards] = await Promise.all([
+    const [box, items, papers, blocks, types, records, cards, boardItems, connectors, strokes, piles, imports, boards, comments] = await Promise.all([
       db.discussions.get(id),
       db.discussionItems.where('discussion_id').equals(id).toArray(),
       db.papers.toArray(),
@@ -163,9 +163,10 @@ export function DiscussionPage({ id }: { id: string }) {
       db.piles.toArray(),
       db.imports.toArray(),
       db.boards.toArray(),
+      db.comments.toArray(),
     ])
     // things in the trash drop out of the box until they come back
-    return { box: box ?? null, items: itemsOf(id, items), ...withoutTrash({ papers, blocks, types, records, cards, boardItems, connectors, strokes, piles, imports, boards }) }
+    return { box: box ?? null, items: itemsOf(id, items), ...withoutTrash({ papers, blocks, types, records, cards, boardItems, connectors, strokes, piles, imports, boards, comments }) }
   }, [id])
   const [exported, setExported] = useState<'ok' | 'manual' | null>(null)
 
@@ -197,7 +198,7 @@ export function DiscussionPage({ id }: { id: string }) {
     .map((item) => {
       if (item.ref_type === 'paper') {
         const p = data.papers.find((x) => x.id === item.ref_id && !x.deleted)
-        return p && { item, kind: p.status === 'want' ? '想看' : '论文', text: p.title || p.doi || p.url, href: p.status === 'want' ? '#/library' : `#/paper/${p.id}` }
+        return p && { item, kind: '论文', text: p.title || p.doi || p.url, href: `#/paper/${p.id}` }
       }
       if (item.ref_type === 'card') {
         const c = data.cards.find((x) => x.id === item.ref_id && !x.deleted)
@@ -242,7 +243,7 @@ export function DiscussionPage({ id }: { id: string }) {
             </button>
           </p>
         )}
-        {rows.length === 0 && <p className="empty">还是空的。在论文页、想看列表、画板或堆里点“放进讨论框”。</p>}
+        {rows.length === 0 && <p className="empty">还是空的。在论文库、论文页、画板或堆里点“放进讨论框”。</p>}
         <ul className="box-items">
           {rows.map(({ item, kind, text, href }) => (
             <li key={item.id} className="box-item">

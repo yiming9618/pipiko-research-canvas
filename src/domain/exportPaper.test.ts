@@ -71,13 +71,21 @@ describe('论文导出 Markdown', () => {
 
   it('没有的部分不写空标题；没有领域写“未分类”', () => {
     const bare = exportPaper({ paper: paper({ one_liner: '', basics_md: '', category: '', url: '', doi: '', authors: [], year: null, venue: '' }), types, fields, blocks: [], comments: [] })
-    expect(bare).toBe('# 论文标题\n\n- 领域：未分类\n')
+    expect(bare).toBe('# 论文标题\n\n- 领域：未分类\n- 状态：未编辑（还没有阅读笔记）\n')
   })
 
-  it('想看的论文写明状态和理由', () => {
-    const want = exportPaper({ paper: paper({ status: 'want', why: '导师推荐' }), types, fields, blocks: [], comments: [] })
-    expect(want).toContain('- 状态：想看（还没读）')
-    expect(want).toContain('- 为什么想看：导师推荐')
+  it('还没有阅读笔记的论文写明“未编辑”和理由；“为什么想看”不算笔记', () => {
+    const bare = exportPaper({ paper: paper({ status: 'want', why: '导师推荐', one_liner: '', basics_md: '' }), types, fields, blocks: [], comments: [] })
+    expect(bare).toContain('- 状态：未编辑（还没有阅读笔记）')
+    expect(bare).toContain('- 为什么想看：导师推荐')
+    const noted = exportPaper({ paper: paper({ status: 'want', one_liner: '' , basics_md: '' }), types, fields, blocks: [block('b', 't1', '方法', 0)], comments: [] })
+    expect(noted).not.toContain('状态')
+  })
+
+  it('笔记里的图片导出成“[图片]”', () => {
+    const md = exportPaper({ paper: paper({ basics_md: '基础\n\n![图片](asset:asset_a1)' }), types, fields, blocks: [block('b', 't1', '方法\n![图片](asset:asset_b2)\n说明', 0)], comments: [comment('c', '2026-11-12', 'me', '理解 ![图片](asset:asset_c3)')] })
+    expect(md).not.toContain('asset:')
+    expect(md.match(/\[图片\]/g)).toHaveLength(3)
   })
 
   it('手动改过的领域以改的为准', () => {

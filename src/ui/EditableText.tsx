@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { Markdown } from './Markdown'
+import { ImageButton, useNoteImages } from './NoteImages'
 
 interface Props {
   /** What is shown and edited. */
@@ -18,16 +19,19 @@ interface Props {
   editRequest?: number
   /** Told when the editor opens or closes. */
   onEditingChange?: (editing: boolean) => void
+  /** Pictures can be put into the text (a picture button; on a Mac also drop and paste). */
+  images?: boolean
 }
 
 /**
  * Text that reads as plain content until tapped. Tapping opens it for
  * editing; the buttons only exist while editing.
  */
-export function EditableText({ value, label, onSave, onDelete, original, placeholder, tapToEdit = true, editRequest = 0, onEditingChange }: Props) {
+export function EditableText({ value, label, onSave, onDelete, original, placeholder, tapToEdit = true, editRequest = 0, onEditingChange, images = false }: Props) {
   const [draft, setDraft] = useState<string | null>(null)
   const ref = useRef<HTMLTextAreaElement>(null)
   const editing = draft !== null
+  const pics = useNoteImages(ref, draft ?? '', (t) => setDraft(t))
 
   useEffect(() => {
     if (editRequest > 0) setDraft((d) => d ?? value)
@@ -96,7 +100,13 @@ export function EditableText({ value, label, onSave, onDelete, original, placeho
           if (e.key === 'Escape') setDraft(null)
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void save()
         }}
+        {...(images ? pics.textareaProps : {})}
       />
+      {images && pics.error && (
+        <p className="status-line is-error" role="alert">
+          {pics.error}
+        </p>
+      )}
       {/* destructive on the left, away from Save; Save is the last button on the right */}
       <div className="edit-actions">
         <div className="edit-actions-side">
@@ -128,6 +138,7 @@ export function EditableText({ value, label, onSave, onDelete, original, placeho
           )}
         </div>
         <div className="edit-actions-side">
+          {images && <ImageButton busy={pics.busy} onFiles={(f) => void pics.add(f)} />}
           <button type="button" className="btn btn-small" onClick={() => setDraft(null)}>
             取消
           </button>

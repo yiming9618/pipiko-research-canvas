@@ -7,7 +7,8 @@ import { db, todayLocal } from '../../store/db'
 import { copyText } from '../../ui/clipboard'
 import { downloadText } from '../../ui/CopyExport'
 import { IconCopy, IconDownload, IconExport } from '../../ui/icons'
-import { Markdown } from '../../ui/Markdown'
+import { AssetsContext, Markdown } from '../../ui/Markdown'
+import { imagesIn } from '../../domain/noteImages'
 import { toast } from '../../ui/toast'
 
 /** "导出" on a paper's page: Markdown (copied) or PDF (the system's print dialog, "Save as PDF"). */
@@ -23,8 +24,10 @@ export function PaperExport({ paper }: { paper: Paper }) {
     ])
     return { paper, blocks, types, comments, fields, readings, imports }
   }, [paper])
+  // every picture of the paper (hand-drawn notes, and pictures inside its notes), loaded before printing
   const assets = useLiveQuery(async () => {
-    const ids = (data?.comments ?? []).filter((c) => !c.deleted && c.asset_id).map((c) => c.asset_id!)
+    const texts = [paper.basics_md, ...(data?.blocks ?? []).filter((b) => !b.deleted).map((b) => b.edited_md ?? b.body_md), ...(data?.comments ?? []).filter((c) => !c.deleted).map((c) => c.text)]
+    const ids = [...new Set([...(data?.comments ?? []).filter((c) => !c.deleted && c.asset_id).map((c) => c.asset_id!), ...texts.flatMap(imagesIn)])]
     return new Map((await db.assets.bulkGet(ids)).filter((a) => !!a).map((a) => [a!.id, a!]))
   }, [data])
   const [open, setOpen] = useState(false)
@@ -123,7 +126,14 @@ export function PaperExport({ paper }: { paper: Paper }) {
           </div>
         </dialog>
       )}
-      {printing && data && createPortal(<PaperSheet data={data} assets={assets} />, document.body)}
+      {printing &&
+        data &&
+        createPortal(
+          <AssetsContext.Provider value={assets ?? new Map()}>
+            <PaperSheet data={data} assets={assets} />
+          </AssetsContext.Provider>,
+          document.body,
+        )}
     </>
   )
 }

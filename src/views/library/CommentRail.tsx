@@ -3,10 +3,11 @@ import { useRef, useState } from 'react'
 import { noteStamp } from '../../domain/exportPaper'
 import type { Asset, Comment, CommentSource } from '../../domain/types'
 import { db } from '../../store/db'
-import { addComment, addImageComment, deleteComment, saveComment } from '../../store/paperActions'
+import { addComment, addPictureNote, deleteComment, saveComment } from '../../store/paperActions'
+import { imagesIn, withoutImages } from '../../domain/noteImages'
 import { EditableText } from '../../ui/EditableText'
-import { IconChevron, IconImage } from '../../ui/icons'
-import { fileToImage } from '../../ui/image'
+import { IconChevron } from '../../ui/icons'
+import { ImageButton, useNoteImages } from '../../ui/NoteImages'
 import { Markdown } from '../../ui/Markdown'
 
 const SOURCE_LABEL: Record<CommentSource, string> = { ai: 'AI 整理', me: '我写的', drawing: '手绘' }
@@ -36,10 +37,10 @@ export function CommentRail({ paperId, reading, readingOf, cardName, selected, o
   }, [comments])
 
   const [text, setText] = useState('')
+  const area = useRef<HTMLTextAreaElement>(null)
+  const pics = useNoteImages(area, text, setText)
   /** Dates opened or closed by hand. Until then only the most recent date is open. */
   const [openDates, setOpenDates] = useState<Record<string, boolean>>({})
-  const [error, setError] = useState('')
-  const fileRef = useRef<HTMLInputElement>(null)
 
   const when = (c: Comment) => c.created_at ?? c.updated_at
   const all = [...(comments ?? [])].filter((c) => !reading || readingOf(c) === reading.id).sort((a, b) => (a.date === b.date ? (when(a) < when(b) ? 1 : -1) : a.date < b.date ? 1 : -1))
@@ -57,21 +58,14 @@ export function CommentRail({ paperId, reading, readingOf, cardName, selected, o
 
   const submit = async () => {
     if (text.trim() === '') return
-    await addComment(paperId, text, selected ?? undefined, reading?.id)
+    // just one picture and no words: a 手绘 note, as a picture posted on its own always was
+    const only = imagesIn(text)
+    if (only.length === 1 && withoutImages(text).trim() === '') await addPictureNote(paperId, only[0], selected ?? undefined, reading?.id)
+    else await addComment(paperId, text, selected ?? undefined, reading?.id)
     setText('')
   }
 
-  const upload = async (file: File | undefined) => {
-    if (!file) return
-    setError('')
-    try {
-      await addImageComment(paperId, await fileToImage(file), selected ?? undefined, reading?.id)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '图片没有加上，请再试一次')
-    } finally {
-      if (fileRef.current) fileRef.current.value = ''
-    }
-  }
+
 
   return (
     <aside className="rail" aria-labelledby="rail-title">
@@ -92,6 +86,8 @@ export function CommentRail({ paperId, reading, readingOf, cardName, selected, o
         <label>
           <span className="sr-only">写一条理解</span>
           <textarea
+            ref={area}
+            {...pics.textareaProps}
             className="edit-input"
             rows={3}
             value={text}
@@ -103,22 +99,11 @@ export function CommentRail({ paperId, reading, readingOf, cardName, selected, o
           <button type="button" className="btn btn-small btn-dark" disabled={text.trim() === ''} onClick={() => void submit()}>
             加上
           </button>
-          <button type="button" className="icon-btn" aria-label="上传一张图片" onClick={() => fileRef.current?.click()}>
-            <IconImage />
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="sr-only"
-            tabIndex={-1}
-            aria-hidden="true"
-            onChange={(e) => void upload(e.target.files?.[0])}
-          />
+          <ImageButton busy={pics.busy} onFiles={(f) => void pics.add(f)} label="插入图片（只放一张图、不写字，就是一条手绘）" />
         </div>
-        {error && (
+        {pics.error && (
           <p className="status-line is-error" role="alert">
-            {error}
+            {pics.error}
           </p>
         )}
       </div>
@@ -205,6 +190,7 @@ function CommentItem({ comment, asset, card, onCard }: { comment: Comment; asset
           value={comment.text}
           label={label}
           onSave={(text) => (text.trim() === '' ? deleteComment(comment) : saveComment(comment, text))}
+          images
           onDelete={() => deleteComment(comment)}
         />
       ) : (

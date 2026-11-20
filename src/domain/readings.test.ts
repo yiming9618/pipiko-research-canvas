@@ -140,8 +140,8 @@ describe('没有导入过的论文', () => {
     expect(pr.list.map((r) => [r.id, r.date])).toEqual([[firstReadingId('p'), '2026-11-01']])
   })
 
-  it('想看的论文不显示空的阅读', () => {
-    expect(paperReadings({ paper: paper({ status: 'want' }), readings: [], imports: [], blocks: [], comments: [] }).list).toEqual([])
+  it('只记了信息的论文（以前的“想看”）也有一个空的第 1 次阅读，可以直接写', () => {
+    expect(paperReadings({ paper: paper({ status: 'want' }), readings: [], imports: [], blocks: [], comments: [] }).list.map((r) => r.id)).toEqual([firstReadingId('p')])
   })
 
   it('之后再导入：没内容的那个空阅读让位；有内容放进去的留下', () => {

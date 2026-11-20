@@ -105,7 +105,8 @@ export function paperReadings(input: ReadingInput): PaperReadings {
   if (!found.has(r0) && !removed(r0)) {
     // things put into it by hand keep it; otherwise it is there only while the paper has no other reading
     const kept = live.some((x) => x.reading_id === r0)
-    if (kept || (found.size === 0 && (paper.status === 'read' || live.length > 0))) {
+    // every paper has a first reading to write in (there is one library: no "想看" papers without one)
+    if (kept || found.size === 0) {
       add({ id: r0, paper_id: paper.id, date: paper.created_at.slice(0, 10), title: '', created_at: paper.created_at })
     }
   }

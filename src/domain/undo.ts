@@ -103,7 +103,7 @@ export function planUndo(entry: ImportEntry, snap: UndoSnapshot, now: ISODateTim
       if (onlyFromHere && !paper.touched && !paper.why && !(snap.keptPaperIds?.has(id) ?? false)) {
         papers.push(tomb(paper))
       } else {
-        if (onlyFromHere) impacts.push(`想看里的「${paper.title || paper.doi}」你动过，会保留在想看里`)
+        if (onlyFromHere) impacts.push(`AI 提到的「${paper.title || paper.doi}」你动过，会保留在论文库里`)
         papers.push({ ...paper, mentioned_in: rest, updated_at: now })
       }
     }

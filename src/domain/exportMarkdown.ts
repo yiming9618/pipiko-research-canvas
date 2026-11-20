@@ -1,3 +1,5 @@
+import { isEdited } from './library'
+import { withImagePlaceholders } from './noteImages'
 // "导出给 AI": turns a discussion box into one Markdown text for the clipboard.
 // Pure: the same box and the same notebook always give the same text.
 
@@ -8,6 +10,7 @@ import type {
   Board,
   BoardItem,
   Card,
+  Comment,
   Connector,
   Discussion,
   DiscussionItem,
@@ -35,6 +38,8 @@ export interface ExportData {
   piles: Pile[]
   boards: Board[]
   imports: ImportEntry[]
+  /** Notes of papers: only to tell 已编辑 from 未编辑 (a paper may have notes and nothing else). */
+  comments?: Comment[]
 }
 
 export const INTRO_ONE_PAPER = '请用我的五个问题带我读这篇论文。'
@@ -159,7 +164,9 @@ function makeWriter(data: NotebookData) {
 
   const paperLines = (p: Paper): string[] => {
     listed.add(p.id)
-    const out = [`### ${paperName(p)}`, '', `- 状态：${p.status === 'want' ? '想看（还没读）' : '已读'}`]
+    // 未编辑 / 已编辑: worked out from the notes (one library; the stored 想看/已读 is not shown)
+    const edited = isEdited(p, data.blocks, data.comments ?? [])
+    const out = [`### ${paperName(p)}`, '', `- 状态：${edited ? '已编辑（有阅读笔记）' : '未编辑（还没有阅读笔记）'}`]
     if (p.authors.length > 0) out.push(`- 作者：${p.authors.join(', ')}`)
     if (p.year !== null) out.push(`- 年份：${p.year}`)
     if (p.venue) out.push(`- 期刊/会议：${p.venue}`)
@@ -167,14 +174,14 @@ function makeWriter(data: NotebookData) {
     if (p.url) out.push(`- 链接：${p.url}`)
     if (p.why) out.push(`- 为什么想看：${p.why}`)
     out.push('')
-    if (p.status === 'read') {
+    if (edited) {
       if (p.one_liner) out.push(`一句话总结：${p.one_liner}`, '')
       const blocks = live(data.blocks)
         .filter((b) => b.paper_id === p.id)
         .sort((a, b) => a.order - b.order)
       for (const b of blocks) {
         const name = b.type_id ? typeById.get(b.type_id)?.name : undefined
-        out.push(`**${name ? `重点 · ${name}` : b.heading || '其他内容'}**`, '', (b.edited_md ?? b.body_md).trim(), '')
+        out.push(`**${name ? `重点 · ${name}` : b.heading || '其他内容'}**`, '', withImagePlaceholders((b.edited_md ?? b.body_md).trim()), '')
       }
     }
     return out

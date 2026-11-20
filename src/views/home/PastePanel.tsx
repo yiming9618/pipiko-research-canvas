@@ -105,7 +105,7 @@ export function PastePanel() {
     setResult({
       ...result,
       similar: undefined,
-      message: ok ? `${result.message}；想看里的那一条已经并进这篇论文` : result.message,
+      message: ok ? `${result.message}；论文库里的那一条已经并进这篇论文` : result.message,
     })
   }
 
@@ -246,7 +246,7 @@ export function PastePanel() {
         )}
         {result?.similar && result.entry && (
           <div className="result is-question">
-            <p className="result-text">这是不是想看里的「{result.similar.want_title}」？</p>
+            <p className="result-text">这是不是论文库里只记了信息的「{result.similar.want_title}」？</p>
             <div className="result-choices">
               <button type="button" className="btn" onClick={() => void sameAsWant()}>
                 是，合并

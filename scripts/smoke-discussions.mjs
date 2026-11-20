@@ -85,18 +85,18 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   await toastSays('已经在「霉菌实验卡住了」里了')
   check(`${tag} 同一样东西在一个框里只出现一次`, true)
 
-  // ── a "想看" paper
+  // ── a paper with only its details (未编辑)
   await page.goto(`${url}#/library`)
-  await page.getByRole('button', { name: /^想看/ }).first().click()
   await page.getByRole('button', { name: '添加论文' }).first().click()
   await page.getByLabel('标题', { exact: true }).fill('一篇想看的论文')
-  await page.getByLabel('为什么想看（可以不填）').fill('想了解它的方法')
-  await page.locator('.paper-form .seg').getByRole('button', { name: '想看', exact: true }).click()
+  await page.getByLabel(/为什么想看/).fill('想了解它的方法')
   await page.getByRole('button', { name: '保存' }).click()
-  await page.getByRole('button', { name: '放进讨论框：一篇想看的论文' }).first().click()
+  await page.locator('.paper-row:visible', { hasText: '一篇想看的论文' }).first().click()
+  await page.getByRole('heading', { name: '一篇想看的论文', level: 1 }).waitFor()
+  await page.locator('.paper-foot').getByRole('button', { name: '放进讨论框' }).click()
   await page.getByRole('button', { name: /霉菌实验卡住了/ }).click()
   await toastSays('已放进「霉菌实验卡住了」')
-  check(`${tag} 想看的论文也能放进去`, true)
+  check(`${tag} 未编辑的论文也能放进去`, true)
 
   // ── the box: only papers so far → the "papers" opening line
   await page.getByRole('link', { name: /^讨论框/ }).click()
@@ -222,7 +222,6 @@ for (const size of sizes.filter((x) => !process.env.ONLY || process.env.ONLY ===
   await page.getByRole('button', { name: '删除这个讨论框' }).click()
   await page.getByRole('heading', { name: '讨论框', level: 1 }).waitFor()
   await page.goto(`${url}#/library`)
-  await page.getByRole('button', { name: /^已读/ }).first().click()
   await page.locator('.paper-row:visible', { hasText: '示例论文标题一' }).first().waitFor()
   check(`${tag} 删除讨论框不影响原来的论文`, true)
 

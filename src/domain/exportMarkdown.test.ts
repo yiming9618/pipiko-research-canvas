@@ -71,13 +71,14 @@ describe('导出给 AI', () => {
     expect(md).not.toContain('已删除')
   })
 
-  it('想看的论文只有基本信息，没有总结；多篇论文换开头', () => {
+  it('未编辑的论文只有基本信息和理由，没有笔记；已编辑的带上；多篇论文换开头', () => {
     const md = buildExport(base({
       items: [item('i1', 'paper', 'a'), item('i2', 'paper', 'w', 1)],
       papers: [paper('a'), paper('w', { status: 'want', one_liner: '', authors: [], year: null, venue: '', why: '想了解方法' })],
     }))
     expect(md.startsWith(INTRO_PAPERS)).toBe(true)
-    expect(md).toContain('- 状态：想看（还没读）')
+    expect(md).toContain('- 状态：未编辑（还没有阅读笔记）')
+    expect(md).toContain('- 状态：已编辑（有阅读笔记）')
     expect(md).toContain('- 为什么想看：想了解方法')
     expect(md.indexOf('### 论文a')).toBeLessThan(md.indexOf('### 论文w'))
   })

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { boxesByRef } from './discussions'
-import { lastRead, sortPapers } from './library'
+import { isAiMention, isEdited, lastRead, sortPapers } from './library'
+import { imagesIn, withImagePlaceholders, withoutImages } from './noteImages'
 import type { Discussion, DiscussionItem, ImportEntry, Paper, PaperUse } from './types'
 
 const T = '2026-11-01T00:00:00.000Z'
@@ -67,4 +68,44 @@ describe('讨论框标记：直接从讨论框的内容读出', () => {
     expect(map.has('paper:p2')).toBe(false)
     expect(map.has('paper:p3')).toBe(false)
   })
+})
+
+describe('已编辑 / 未编辑：从笔记算出，不存状态', () => {
+  const p = paper('p', { why: '导师推荐的' })
+  const block = { paper_id: 'p' }
+  const note = (over = {}) => ({ paper_id: 'p', text: '理解', asset_id: undefined, ...over })
+  it('只有信息和“为什么想看”：未编辑', () => expect(isEdited(p, [], [])).toBe(false))
+  it('一句话总结、基础、重点、理解（含手绘）都算已编辑', () => {
+    expect(isEdited({ ...p, one_liner: '总结' }, [], [])).toBe(true)
+    expect(isEdited({ ...p, basics_md: '1. 在什么领域' }, [], [])).toBe(true)
+    expect(isEdited(p, [block], [])).toBe(true)
+    expect(isEdited(p, [], [note()])).toBe(true)
+    expect(isEdited(p, [], [note({ text: '', asset_id: 'asset_1' })])).toBe(true)
+  })
+  it('删掉的不算', () => expect(isEdited(p, [{ ...block, deleted: true }], [note({ deleted: true })])).toBe(false))
+  it('AI 提到的：没写过东西时才算（写了就是普通论文）', () => {
+    expect(isAiMention({ added_by: 'ai' }, false)).toBe(true)
+    expect(isAiMention({ added_by: 'ai' }, true)).toBe(false)
+    expect(isAiMention({ added_by: 'me' }, false)).toBe(false)
+  })
+})
+
+describe('排序方向', () => {
+  const papers = [paper('a', { year: 2020 }), paper('b', { year: 2024 }), paper('none'), paper('now', { year: 1999 })]
+  const uses = new Map([['now', { id: 'now', updated_at: T, reading_since: T } as PaperUse]])
+  it('升序：旧的在前；没有年份的仍在最后；在读的仍在最前', () => {
+    expect(ids(sortPapers(papers, 'published', uses, () => '', 'asc'))).toEqual(['now', 'a', 'b', 'none'])
+    expect(ids(sortPapers(papers, 'published', uses, () => '', 'desc'))).toEqual(['now', 'b', 'a', 'none'])
+  })
+  it('最近阅读升序：从没读过的仍在最后', () => {
+    const at = (x: Paper) => (x.id === 'a' ? '2026-11-01' : x.id === 'b' ? '2026-11-05' : '')
+    expect(ids(sortPapers(papers.slice(0, 3), 'read', new Map(), at, 'asc'))).toEqual(['a', 'b', 'none'])
+  })
+})
+
+describe('笔记里的图片', () => {
+  const text = '方法说明\n![图片](asset:asset_ab12)\n后面的字 ![图片](asset:asset_cd34)'
+  it('找出图片', () => expect(imagesIn(text)).toEqual(['asset_ab12', 'asset_cd34']))
+  it('Markdown 导出用“[图片]”', () => expect(withImagePlaceholders(text)).toBe('方法说明\n[图片]\n后面的字 [图片]'))
+  it('搜索时去掉图片', () => expect(withoutImages(text)).not.toContain('asset'))
 })

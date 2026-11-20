@@ -1,3 +1,5 @@
+import { isAiMention, isEdited } from '../domain/library'
+import { withoutImages } from '../domain/noteImages'
 // Gathers everything searchable into one flat list. Built when the search
 // panel opens; the notebook is small enough that this takes a few milliseconds.
 
@@ -57,12 +59,13 @@ export async function loadSearchData(): Promise<SearchData> {
       dates: read.length > 0 ? [...new Set(read)] : [day(p.created_at)],
       title: p.title,
       keywords: [...p.keywords, fieldOfPaper(p, fields)?.name ?? '', p.authors.join(' '), p.venue, p.doi, p.year ?? ''].join(' '),
-      body: [p.one_liner, p.basics_md].filter(Boolean).join('\n'),
-      deep: [...ownBlocks.map((b) => b.edited_md ?? b.body_md), ...ownComments.map((c) => c.text)].join('\n'),
-      label: p.status === 'want' ? '想看' : '论文',
+      body: withoutImages([p.one_liner, p.basics_md].filter(Boolean).join('\n')),
+      deep: withoutImages([...ownBlocks.map((b) => b.edited_md ?? b.body_md), ...ownComments.map((c) => c.text)].join('\n')),
+      // hidden in the library by default, but always found here, with its tag
+      label: isAiMention(p, isEdited(p, ownBlocks, ownComments)) ? 'AI 提到' : '论文',
       color: 'red',
-      href: p.status === 'want' ? '#/library' : `#/paper/${p.id}`,
-      ref: p.status === 'want' ? null : { type: 'paper', id: p.id },
+      href: `#/paper/${p.id}`,
+      ref: { type: 'paper', id: p.id },
     })
   }
 
@@ -77,7 +80,7 @@ export async function loadSearchData(): Promise<SearchData> {
       dates: [(b.import_id && importDate.get(b.import_id)) || day(b.updated_at)],
       title: paper.title,
       keywords: type?.name ?? b.heading,
-      body: b.edited_md ?? b.body_md,
+      body: withoutImages(b.edited_md ?? b.body_md),
       label: type?.name ?? (b.heading || '其他内容'),
       color: type?.color ?? 'plain',
       href: `#/paper/${paper.id}`,
@@ -94,7 +97,7 @@ export async function loadSearchData(): Promise<SearchData> {
       dates: [c.date],
       title: paper.title,
       keywords: '',
-      body: c.text,
+      body: withoutImages(c.text),
       label: c.source === 'ai' ? '理解 · AI 整理' : '理解 · 我写的',
       color: 'plain',
       href: `#/paper/${paper.id}`,

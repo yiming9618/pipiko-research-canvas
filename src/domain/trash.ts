@@ -48,6 +48,7 @@ export function withoutTrash(data: NotebookData): NotebookData {
     boards: data.boards.filter((b) => !gone.has(b.id)),
     papers: data.papers.filter((p) => !goneP.has(p.id)),
     blocks: data.blocks.filter((b) => !goneP.has(b.paper_id)),
+    ...(data.comments ? { comments: data.comments.filter((c) => !goneP.has(c.paper_id)) } : {}),
     records: data.records.filter((r) => !goneRecords.has(r.id)),
     cards: data.cards.filter((c) => !goneCards.has(c.id)),
     boardItems: data.boardItems.filter(

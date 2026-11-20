@@ -8,23 +8,24 @@ import { trashPaper } from '../../store/trashActions'
 const plain = { autoCapitalize: 'off', autoCorrect: 'off', spellCheck: false } as const
 
 /** "添加论文": one of DOI, link or title is enough. */
-export function AddPaperForm({ defaultStatus, onDone }: { defaultStatus: 'read' | 'want'; onDone: (status: 'read' | 'want') => void }) {
+/** There is one library: a paper added by hand is kept as a reference until notes are written for it. */
+export function AddPaperForm({ onDone }: { onDone: () => void }) {
   const [doi, setDoi] = useState('')
   const [url, setUrl] = useState('')
   const [title, setTitle] = useState('')
   const [why, setWhy] = useState('')
-  const [status, setStatus] = useState(defaultStatus)
   const [note, setNote] = useState('')
   const empty = !doi.trim() && !url.trim() && !title.trim()
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    const out = await addPaper({ doi, url, title, why, status })
+    // stored as "想看" inside, as before: importing its Markdown later still finds it and fills it in
+    const out = await addPaper({ doi, url, title, why, status: 'want' })
     if (out.result === 'exists') {
-      setNote(`库里已经有这篇了：「${out.paper.title || out.paper.doi}」（在${out.paper.status === 'want' ? '想看' : '已读'}里）`)
+      setNote(`库里已经有这篇了：「${out.paper.title || out.paper.doi}」`)
       return
     }
-    if (out.result === 'added') onDone(status)
+    if (out.result === 'added') onDone()
   }
 
   return (
@@ -43,22 +44,14 @@ export function AddPaperForm({ defaultStatus, onDone }: { defaultStatus: 'read' 
         <input value={title} onChange={(e) => setTitle(e.target.value)} />
       </label>
       <label className="field">
-        <span>为什么想看（可以不填）</span>
+        <span>为什么想看（可以不填，不算阅读笔记）</span>
         <input value={why} onChange={(e) => setWhy(e.target.value)} />
       </label>
-      <div className="seg" role="group" aria-label="放在哪里">
-        <button type="button" className="btn" aria-pressed={status === 'want'} onClick={() => setStatus('want')}>
-          想看
-        </button>
-        <button type="button" className="btn" aria-pressed={status === 'read'} onClick={() => setStatus('read')}>
-          已读
-        </button>
-      </div>
       <div className="row-actions">
         <button type="submit" className="btn btn-primary" disabled={empty}>
           保存
         </button>
-        <button type="button" className="btn btn-quiet" onClick={() => onDone(defaultStatus)}>
+        <button type="button" className="btn btn-quiet" onClick={() => onDone()}>
           取消
         </button>
       </div>
@@ -189,7 +182,7 @@ export function EditPaperForm({ paper, full, onDone }: { paper: Paper; full?: bo
         <button type="button" className="btn btn-quiet" onClick={onDone}>
           取消
         </button>
-        {paper.status === 'want' && (
+        {!full && paper.status === 'want' && (
           <button
             type="button"
             className="btn btn-quiet form-remove"

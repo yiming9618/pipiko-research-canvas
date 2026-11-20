@@ -80,6 +80,17 @@ export async function addImageComment(
   })
 }
 
+/** A note that is one picture and nothing else (already in the image table): shown as 手绘, as before. */
+export async function addPictureNote(paperId: string, assetId: string, blockId?: string, readingId?: string): Promise<void> {
+  const now = nowIso()
+  await applyChanges({
+    comments: [
+      { id: newId('cmt'), paper_id: paperId, date: todayLocal(), source: 'drawing', text: '', asset_id: assetId, created_at: now, ...(blockId ? { block_id: blockId } : {}), ...(readingId ? { reading_id: readingId } : {}), updated_at: now },
+    ],
+    paperUse: [await workedRow(paperId, now)],
+  })
+}
+
 export async function saveComment(comment: Comment, text: string): Promise<void> {
   if (text.trim() === comment.text.trim()) return
   await applyChanges({ comments: [{ ...comment, text: text.trim(), updated_at: nowIso() }], paperUse: [await workedRow(comment.paper_id)] })

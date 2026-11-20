@@ -170,7 +170,7 @@ function TypeEditor() {
 /** Fields (领域): make, rename, delete. A paper belongs to at most one. */
 function FieldEditor({ focus }: { focus: boolean }) {
   const fields = useLiveQuery(() => db.fields.filter((f) => !f.deleted).toArray())
-  const papers = useLiveQuery(() => db.papers.filter((p) => !p.deleted && !p.trashed_at && p.status === 'read').toArray())
+  const papers = useLiveQuery(() => db.papers.filter((p) => !p.deleted && !p.trashed_at).toArray())
   const [name, setName] = useState('')
   const [note, setNote] = useState('')
   const ref = useRef<HTMLElement>(null)
@@ -316,8 +316,7 @@ function Trash({ focus }: { focus: boolean }) {
                     <span className="trash-text">
                       <span className="trash-name">{p.title || p.doi || '（没有标题）'}</span>
                       <span className="trash-meta">
-                        {p.status === 'want' ? '想看' : '已读'}
-                        {n > 0 ? ` · ${n} 条理解` : ''} · {day(p.trashed_at)} 移入
+                        论文{n > 0 ? ` · ${n} 条理解` : ''} · {day(p.trashed_at)} 移入
                       </span>
                     </span>
                     <button type="button" className="btn" aria-label={`恢复论文：${p.title || p.doi}`} onClick={() => void restorePaper(p)}>
